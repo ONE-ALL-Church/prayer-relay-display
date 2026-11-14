@@ -1,0 +1,11 @@
+{
+  "demo": {
+    "demo": "1",
+    "name": "Sample outreach relay",
+    "org": "Example Church",
+    "headline": "Pray for the world",
+    "intro": "Take a minute to pray for a place in the world.",
+    "accent": "#f3cc59",
+    "qr": "vanity"
+  }
+}

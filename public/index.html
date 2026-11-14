@@ -22,28 +22,63 @@
         <form id="relay-form">
           <label for="relay">Prayer.Global relay URL</label>
           <input id="relay" name="relay" type="url" placeholder="Paste your public map or display link" required maxlength="240">
+          <label for="relay-name">Relay name <span>For your saved list</span></label>
+          <input id="relay-name" name="relay-name" type="text" maxlength="60" placeholder="Outreach Weekend">
           <label for="org">Organization name</label>
           <input id="org" name="org" type="text" maxlength="42" placeholder="Your church or organization">
           <label for="headline">Screen headline</label>
           <input id="headline" name="headline" type="text" maxlength="42" placeholder="Pray for the world">
           <label for="invite">Prayer link <span>Optional</span></label>
-          <input id="invite" name="invite" type="url" maxlength="160" placeholder="https://yourchurch.org/pray">
+          <input id="invite" name="invite" type="url" maxlength="240" placeholder="https://yourchurch.org/pray">
+          <label for="qr-destination">Side-screen QR code</label>
+          <select id="qr-destination" name="qr-destination">
+            <option value="direct">Open the prayer link</option>
+            <option value="overview">Open a branded overview</option>
+            <option value="vanity">Open a branded overview at a short URL</option>
+          </select>
+          <div id="overview-settings" hidden>
+            <label for="intro-copy">Overview introduction <span>Optional</span></label>
+            <textarea id="intro-copy" name="intro-copy" rows="3" maxlength="160" placeholder="Take a minute to pray for a place in the world."></textarea>
+          </div>
+          <div id="vanity-settings" hidden>
+            <label for="vanity-slug">Short URL slug</label>
+            <input id="vanity-slug" type="text" maxlength="48" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="outreach-weekend" aria-describedby="short-preview">
+            <p id="short-preview"></p>
+          </div>
           <label class="color-field" for="accent">Accent color <input id="accent" name="accent" type="color" value="#f3cc59"></label>
-          <button class="primary" type="submit">Create screen links</button>
+          <button class="primary" type="submit">Save relay and create links</button>
           <p id="form-status" role="status"></p>
         </form>
       </section>
       <aside class="setup-aside">
+        <section class="links-card saved-card" id="published-relays" hidden>
+          <h2>Published relays</h2>
+          <ul class="relay-list" id="published-list"></ul>
+        </section>
+        <section class="links-card saved-card" id="saved-relays" hidden>
+          <h2>Saved relays</h2>
+          <p>Saved in this browser. Copy a setup link to edit a relay on another device.</p>
+          <ul class="relay-list" id="relay-list"></ul>
+          <button type="button" class="secondary" id="new-relay">New relay</button>
+        </section>
         <div class="demo-card">
           <img src="/demo-preview.svg" alt="" width="679" height="310">
           <h2>See it in action</h2>
-          <p>Try both layouts and rehearse the 100% celebration with sample data.</p>
-          <div class="link-row"><a href="/?view=side&amp;demo=1">Side screen ↗</a><a href="/?view=led&amp;demo=1">Rear LED ↗</a></div>
+          <p>Try both layouts and the participant overview with sample data.</p>
+          <div class="link-row"><a href="/?view=side&amp;demo=1">Side screen ↗</a><a href="/?view=led&amp;demo=1">Rear LED ↗</a><a href="/r/demo">Overview ↗</a></div>
         </div>
         <div id="results" class="links-card" hidden>
           <h2>Your screen links</h2>
           <p>Open the links on your production computers. Keep the setup link to update your settings.</p>
           <div id="generated"></div>
+          <p id="publish-status"></p>
+          <p id="copy-status" role="status"></p>
+          <details id="vanity-help">
+            <summary>Publish a short relay URL</summary>
+            <p>Update <code>public/relays.json</code> in your deployment repository and redeploy. Keep the entries for your other relays. Open the updated relay from Published relays to get its short QR link.</p>
+            <label for="profile-json">Relay settings</label>
+            <textarea id="profile-json" rows="8" readonly></textarea>
+          </details>
         </div>
       </aside>
     </div>
@@ -78,6 +113,27 @@
       <button id="preview" type="button">Preview 100%</button>
       <button id="fullscreen" type="button">Full screen</button>
     </nav>
+  </main>
+  <main id="overview" class="overview" hidden>
+    <div class="overview-inner">
+      <p id="overview-org" class="overview-org"></p>
+      <div class="overview-content">
+        <h1 id="overview-headline"></h1>
+        <p id="overview-intro"></p>
+        <a id="start-praying" class="primary" href="https://prayer.global/">Start praying <span aria-hidden="true">↗</span></a>
+      </div>
+      <section class="overview-progress" aria-labelledby="overview-progress-title">
+        <div class="overview-progress-header">
+          <h2 id="overview-progress-title">Relay progress</h2>
+          <p id="overview-status" role="status"></p>
+        </div>
+        <dl>
+          <div><dt>Coverage</dt><dd id="overview-coverage">—</dd></div>
+          <div><dt>Participants</dt><dd id="overview-participants">—</dd></div>
+        </dl>
+      </section>
+      <p class="overview-credit">Live relay data from <a href="https://prayer.global/">Prayer.Global</a>.</p>
+    </div>
   </main>
   <noscript>This display needs JavaScript. Enable JavaScript and reload the page.</noscript>
 </body>
