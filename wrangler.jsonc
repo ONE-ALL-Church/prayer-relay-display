@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "prayer-relay-display",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-11-14",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/relay"]
+  }
+}

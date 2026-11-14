@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Set up a live Prayer.Global map for your auditorium, stage, or lobby.">
+  <title>Prayer Relay Display</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main id="setup" class="setup">
+    <header class="intro">
+      <a class="brand" href="/">Prayer Relay <b>Display</b></a>
+      <h1>Give your prayer relay<br> a screen.</h1>
+      <p>Set up a live map for your auditorium, stage, or lobby. Your congregation joins through Prayer.Global.</p>
+    </header>
+
+    <div class="setup-grid">
+      <section class="form-card">
+        <h2>Connect your relay</h2>
+        <form id="relay-form">
+          <label for="relay">Prayer.Global relay URL</label>
+          <input id="relay" name="relay" type="url" placeholder="Paste your public map or display link" required maxlength="240">
+          <label for="org">Organization name</label>
+          <input id="org" name="org" type="text" maxlength="42" placeholder="Your church or organization">
+          <label for="headline">Screen headline</label>
+          <input id="headline" name="headline" type="text" maxlength="42" placeholder="Pray for the world">
+          <label for="invite">Prayer link <span>Optional</span></label>
+          <input id="invite" name="invite" type="url" maxlength="160" placeholder="https://yourchurch.org/pray">
+          <label class="color-field" for="accent">Accent color <input id="accent" name="accent" type="color" value="#f3cc59"></label>
+          <button class="primary" type="submit">Create screen links</button>
+          <p id="form-status" role="status"></p>
+        </form>
+      </section>
+      <aside class="setup-aside">
+        <div class="demo-card">
+          <img src="/demo-preview.svg" alt="" width="679" height="310">
+          <h2>See it in action</h2>
+          <p>Try both layouts and rehearse the 100% celebration with sample data.</p>
+          <div class="link-row"><a href="/?view=side&amp;demo=1">Side screen ↗</a><a href="/?view=led&amp;demo=1">Rear LED ↗</a></div>
+        </div>
+        <div id="results" class="links-card" hidden>
+          <h2>Your screen links</h2>
+          <p>Open the links on your production computers. Keep the setup link to update your settings.</p>
+          <div id="generated"></div>
+        </div>
+      </aside>
+    </div>
+    <footer class="setup-footer"><a href="https://github.com/bscottdavis/prayer-relay-display">Source and setup guide ↗</a><a href="https://prayer.global/">Prayer.Global ↗</a></footer>
+  </main>
+
+  <main id="display" class="display" hidden>
+    <header class="screen-header"><span id="screen-org"></span><span id="connection" role="status">Connecting</span></header>
+    <div class="map-panel">
+      <svg id="world" viewBox="0 0 1000 425" role="img" aria-label="World map showing prayer coverage"></svg>
+      <p id="map-status" hidden></p>
+    </div>
+    <section class="coverage" aria-label="Prayer relay coverage">
+      <strong class="metric"><span id="percent">—</span><span class="unit">%</span></strong>
+      <span class="metric-label">Relay coverage</span>
+    </section>
+    <section class="details" aria-label="Participation">
+      <div class="stat"><strong id="participants">—</strong><span>Participants</span></div>
+      <div class="stat"><strong id="minutes">—</strong><span>Minutes prayed</span></div>
+    </section>
+    <aside class="invitation">
+      <h1 id="screen-headline">Pray for the world</h1>
+      <a id="qr-link" aria-label="Open the prayer relay"><img id="qr" alt="Scan to join the prayer relay" width="320" height="320"></a>
+      <a id="join-link">Join the relay</a>
+    </aside>
+    <div class="milestone" id="milestone" aria-hidden="true" hidden>
+      <strong>100%</strong><span>The world, covered in prayer.</span>
+    </div>
+    <nav class="controls" aria-label="Display controls">
+      <a id="edit-link" href="/">Setup</a>
+      <a id="switch-view">Other view</a>
+      <button id="preview" type="button">Preview 100%</button>
+      <button id="fullscreen" type="button">Full screen</button>
+    </nav>
+  </main>
+  <noscript>This display needs JavaScript. Enable JavaScript and reload the page.</noscript>
+</body>
+</html>
