@@ -4,18 +4,30 @@ Give a public Prayer.Global relay a live map for your auditorium. The side scree
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ONE-ALL-Church/prayer-relay-display)
 
-[Try the side screen](https://prayer-relay-display.oneandall.workers.dev/?view=side&demo=1) · [Try the rear LED](https://prayer-relay-display.oneandall.workers.dev/?view=led&demo=1)
+[Try the side screen](https://prayer-relay-display.oneandall.workers.dev/?view=side&demo=1) · [Try the rear LED](https://prayer-relay-display.oneandall.workers.dev/?view=led&demo=1) · [Try the participant overview](https://prayer-relay-display.oneandall.workers.dev/r/demo)
 
 ## Put it on your screens
 
 1. Create a public custom relay in [Prayer.Global](https://prayer.global/). Copy its public map or display link.
 2. Select **Deploy to Cloudflare**. Sign in to Cloudflare and connect GitHub when prompted. Accept the build and deploy commands.
-3. Open your deployment's `workers.dev` URL. Paste the relay link and choose **Create screen links**.
+3. Open your deployment's `workers.dev` URL. Paste the relay link and choose **Save relay and create links**.
 4. Copy **Side screen** and **Rear LED** to your production computers. Keep the **Setup link** for changes.
 5. Open each link on its intended display. Move the pointer to find **Full screen** and **Preview 100%**.
 6. Scan the side-screen QR code with a phone before service. Confirm it opens the correct relay.
 
-The form also accepts an organization name, headline, accent color, and public HTTPS prayer link. By default the QR code opens the relay map. If you enter a custom link, test its redirect on a phone.
+Name each relay to find it in **Saved relays**. Each relay has its own organization name, headline, accent color, optional introduction, and public HTTPS prayer link. Save more than one relay, then open each relay from the list to edit or copy its links. Saved relays are stored in this browser. A setup link can open the same settings on another device.
+
+### Choose where the QR code goes
+
+- **Open the prayer link** takes participants straight to Prayer.Global or to the custom link you enter.
+- **Open a branded overview** shows your organization name, introduction, and current coverage. Choose **Start praying** to open the configured prayer link.
+- **Open a branded overview at a short URL** puts a short address on the screen and in its QR code, such as `prayer-relay-display.example.workers.dev/r/outreach`.
+
+To publish a short URL, enter a unique slug in setup and save the relay. Copy its settings into [public/relays.json](public/relays.json) in your deployment repository and redeploy. Keep the entries for the other relays. Open the relay from **Published relays** to copy its screen links. A published relay uses the same URL across devices. Changing its published settings and redeploying updates existing links, including printed QR codes.
+
+Open setup on the hostname you want to use on the screen. The short links use that hostname. This works on your deployment's `workers.dev` subdomain and any [Cloudflare Custom Domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) connected to the Worker. Cloudflare manages the hostname. The app manages the `/r/` paths.
+
+For a preview, open `/r/demo` for the overview or `/r/demo?view=side` to see the short address and QR code on a screen.
 
 Use the demo links to rehearse without a relay. Demo screens show **Demo data**. The **Preview 100%** button works on either layout and leaves live data alone. The live celebration plays when the first lap crosses 100% during an active connection. The number can continue past 100% if the relay starts another lap.
 
@@ -23,7 +35,7 @@ Use the demo links to rehearse without a relay. Demo screens show **Demo data**.
 
 The project works on [Cloudflare Workers Free](https://developers.cloudflare.com/workers/platform/pricing/). It uses a `workers.dev` address, static assets, and one small relay lookup route. Cloudflare applies its Free plan request limit to the lookup. Screen refreshes read from Prayer.Global directly. There is no database, API key, or paid service to set up.
 
-Screen links carry the settings in the URL. Each link works on a fresh browser. Use public values only. To make a change, open the setup link, change the setting, and share the new screen links.
+Standard screen links carry their settings in the URL. Short links load the published settings by slug. Both work on a fresh browser. Use public values only.
 
 Prayer.Global handles participation and owns the totals. The display reads aggregate statistics and highlights the places in the public grid. Its map loads the [Location Grid boundaries](https://github.com/DiscipleTools/location-grid-project) from the upstream host. The repository does not include those boundaries. Coverage totals can include places whose boundaries are missing. [Prayer.Global data sources](https://prayer.global/content_app/data_sources/)
 

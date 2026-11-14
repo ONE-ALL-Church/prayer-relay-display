@@ -1,25 +1,58 @@
 import QRCode from 'qrcode';
 import { origin, readRelayUrl, relayParts, getRelay, progress } from './relay.mjs';
 import { drawMap, loadMap } from './map.mjs';
+import { appUrl, inviteUrl, prayerUrl, screenInvitation, settings, slugPattern, usableRelay } from './settings.mjs';
 
 const $ = id => document.getElementById(id);
 const currentUrl = new URL(location.href);
 const query = currentUrl.searchParams;
-const demo = query.get('demo') === '1';
-const view = query.get('view');
+const base = currentUrl.origin;
 const motion = matchMedia('(prefers-reduced-motion: reduce)');
+const savedKey = 'prayer-relay-display:saved-relays';
+const vanityPath = currentUrl.pathname.match(/^\/r\/([^/]+)\/?$/);
+const allowedViews = ['side', 'led', 'join'];
 
-function screenUrl(options, layout) {
-  const url = new URL('/', location.origin);
-  for (const [key, value] of Object.entries(options)) if (value) url.searchParams.set(key, value);
-  if (layout) url.searchParams.set('view', layout);
-  return url;
+async function publishedRelays() {
+  try {
+    const response = await fetch('/relays.json');
+    if (!response.ok) return {};
+    const records = await response.json();
+    return Object.fromEntries(Object.entries(records).flatMap(([slug, record]) => {
+      if (!slugPattern.test(slug) || slug.length > 48 || !record || typeof record !== 'object') return [];
+      const config = settings(record);
+      return usableRelay(config) ? [[slug, config]] : [];
+    }));
+  } catch {
+    return {};
+  }
 }
 
-function inviteUrl(value) {
-  const url = new URL(value);
-  if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Use a public HTTPS prayer link.');
-  return url.href;
+function savedRelays() {
+  try {
+    const records = JSON.parse(localStorage.getItem(savedKey) || '{}');
+    return records && typeof records === 'object' && !Array.isArray(records) ? records : {};
+  } catch {
+    return {};
+  }
+}
+
+function storeRelays(records) {
+  try {
+    localStorage.setItem(savedKey, JSON.stringify(records));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function applyAccent(color) {
+  const channels = color.slice(1).match(/../g).map(hex => {
+    const channel = Number.parseInt(hex, 16) / 255;
+    return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
+  });
+  const luminance = .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+  document.documentElement.style.setProperty('--accent', color);
+  document.documentElement.style.setProperty('--accent-text', luminance > .179 ? '#000' : '#fff');
 }
 
 function addResult(name, url) {
@@ -37,29 +70,140 @@ function addResult(name, url) {
   copy.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(url.href);
-      $('form-status').textContent = name + ' copied.';
+      $('copy-status').textContent = name + ' copied.';
     } catch {
-      $('form-status').textContent = 'Open ' + name.toLowerCase() + ' and copy its address.';
+      $('copy-status').textContent = 'Open ' + name.toLowerCase() + ' and copy its address.';
     }
   });
   row.append(anchor, copy);
   $('generated').append(row);
 }
 
-function showSetup() {
-  $('display').hidden = true;
+function showSetup(prefill, published, initialMessage = '') {
+  const form = $('relay-form');
+  const status = $('form-status');
+  let editing;
+  let records = savedRelays();
+  status.textContent = initialMessage;
   $('setup').hidden = false;
-  const key = query.get('relay');
-  if (key && /^[0-9a-f]{6}$/.test(key)) $('relay').value = origin + '/prayer_app/custom/' + key + '/display';
-  for (const field of ['org', 'headline', 'invite']) $(field).value = query.get(field) || '';
-  if (/^#[0-9a-f]{6}$/i.test(query.get('accent'))) $('accent').value = query.get('accent');
 
-  $('relay-form').addEventListener('submit', async event => {
+  function showDestination() {
+    const choice = $('qr-destination').value;
+    $('overview-settings').hidden = choice === 'direct';
+    $('vanity-settings').hidden = choice !== 'vanity';
+    $('vanity-slug').required = choice === 'vanity';
+    $('vanity-slug').disabled = choice !== 'vanity';
+    const slug = $('vanity-slug').value;
+    $('short-preview').textContent = slugPattern.test(slug) ? appUrl(base, {}, undefined, slug).href : '';
+  }
+
+  function fill(config, slug = '') {
+    $('relay').value = relayKeyUrl(config.relay);
+    const fields = { 'relay-name': config.name, org: config.org, headline: config.headline, invite: config.invite,
+      'intro-copy': config.intro, accent: config.accent, 'qr-destination': config.qr, 'vanity-slug': slug };
+    for (const [field, value] of Object.entries(fields)) $(field).value = value;
+    showDestination();
+  }
+
+  function showLinks(config, slug = '') {
+    const isPublished = Object.hasOwn(published, slug) && JSON.stringify(published[slug]) === JSON.stringify(config);
+    const publishedSlug = isPublished ? slug : '';
+    const linkedConfig = !isPublished && config.qr === 'vanity' ? { ...config, qr: 'overview' } : config;
+    $('generated').replaceChildren();
+    $('copy-status').textContent = '';
+    addResult('Side screen', appUrl(base, linkedConfig, 'side', publishedSlug));
+    addResult('Rear LED', appUrl(base, linkedConfig, 'led', publishedSlug));
+    addResult('Participant overview', appUrl(base, linkedConfig, 'join', publishedSlug));
+    const setup = appUrl(base, config);
+    if (slug) setup.searchParams.set('slug', slug);
+    addResult('Setup link', setup);
+
+    $('vanity-help').hidden = isPublished || config.qr !== 'vanity';
+    $('vanity-help').open = !isPublished && config.qr === 'vanity';
+    $('profile-json').value = JSON.stringify({ ...published, [slug]: config }, null, 2);
+    $('publish-status').textContent = !isPublished && config.qr === 'vanity'
+      ? 'These links preview the branded overview. Publish the short URL to use it in the QR code.' : '';
+    $('results').hidden = false;
+  }
+
+  function renderSaved() {
+    const list = $('relay-list');
+    list.replaceChildren();
+    for (const [key, record] of Object.entries(records)) {
+      const config = settings(record?.config || {});
+      if (!usableRelay(config) || config.demo) continue;
+      const item = document.createElement('li');
+      const select = document.createElement('button');
+      select.type = 'button';
+      select.className = 'secondary';
+      select.textContent = config.name || config.headline || config.org || config.relay;
+      select.addEventListener('click', () => {
+        editing = key;
+        fill(config, record.slug);
+        showLinks(config, record.slug);
+        status.textContent = 'Relay loaded. Save to update its settings.';
+        $('relay-name').focus();
+      });
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary';
+      remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', 'Remove ' + select.textContent);
+      remove.addEventListener('click', () => {
+        const remaining = { ...records };
+        delete remaining[key];
+        if (!storeRelays(remaining)) {
+          status.textContent = 'This browser could not remove the saved relay.';
+          return;
+        }
+        records = remaining;
+        if (editing === key) editing = undefined;
+        renderSaved();
+        status.textContent = 'Removed from this browser.';
+        if (list.childElementCount) $('new-relay').focus();
+        else $('relay').focus();
+      });
+      item.append(select, remove);
+      list.append(item);
+    }
+    $('saved-relays').hidden = !list.childElementCount;
+  }
+
+  const publishedList = $('published-list');
+  for (const [slug, config] of Object.entries(published)) {
+    if (config.demo) continue;
+    const item = document.createElement('li');
+    const select = document.createElement('button');
+    select.type = 'button';
+    select.className = 'secondary';
+    select.textContent = config.name || config.headline || slug;
+    select.addEventListener('click', () => {
+      editing = undefined;
+      fill(config, slug);
+      showLinks(config, slug);
+      $('generated').querySelector('a').focus();
+    });
+    item.append(select);
+    publishedList.append(item);
+  }
+  $('published-relays').hidden = !publishedList.childElementCount;
+
+  fill(prefill, query.get('slug') ?? '');
+  renderSaved();
+  $('qr-destination').addEventListener('change', showDestination);
+  $('vanity-slug').addEventListener('input', showDestination);
+  $('new-relay').addEventListener('click', () => {
+    editing = undefined;
+    fill(settings({}));
+    status.textContent = '';
+    $('results').hidden = true;
+    $('relay').focus();
+  });
+
+  form.addEventListener('submit', async event => {
     event.preventDefault();
-    const status = $('form-status');
     const button = event.submitter;
     button.disabled = true;
-    $('results').hidden = true;
     status.textContent = 'Checking the relay…';
     try {
       const key = readRelayUrl($('relay').value);
@@ -68,13 +212,20 @@ function showSetup() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? 'The relay could not be verified.');
       await getRelay(relayParts(key, result.id));
-      const options = { relay: key, id: result.id, org: $('org').value.trim(), headline: $('headline').value.trim(), invite, accent: $('accent').value };
-      $('generated').replaceChildren();
-      addResult('Side screen', screenUrl(options, 'side'));
-      addResult('Rear LED', screenUrl(options, 'led'));
-      addResult('Setup link', screenUrl(options));
-      $('results').hidden = false;
-      status.textContent = 'Both screen links are ready.';
+      const qr = $('qr-destination').value;
+      const slug = qr === 'vanity' ? $('vanity-slug').value : '';
+      const config = settings({ relay: key, id: result.id, name: $('relay-name').value,
+        org: $('org').value, headline: $('headline').value, invite, intro: $('intro-copy').value, accent: $('accent').value, qr });
+      const recordKey = editing ?? crypto.randomUUID();
+      const updated = { ...savedRelays(), [recordKey]: { config, slug } };
+      const stored = storeRelays(updated);
+      if (stored) {
+        records = updated;
+        editing = recordKey;
+        renderSaved();
+      }
+      showLinks(config, slug);
+      status.textContent = stored ? 'Screen links are ready. Relay saved in this browser.' : 'Screen links are ready. Copy the setup link to save your settings.';
       $('generated').querySelector('a').focus();
     } catch (error) {
       status.textContent = error instanceof TypeError || error.name === 'TimeoutError'
@@ -83,6 +234,45 @@ function showSetup() {
       button.disabled = false;
     }
   });
+}
+
+function relayKeyUrl(key) {
+  return /^[0-9a-f]{6}$/.test(key) ? `${origin}/prayer_app/custom/${key}/display` : '';
+}
+
+function showOverview(config) {
+  const demo = config.demo === '1';
+  $('overview').hidden = false;
+  applyAccent(config.accent);
+  $('overview-org').textContent = config.org || 'Prayer Relay';
+  $('overview-headline').textContent = config.headline || 'Pray for the world';
+  $('overview-intro').textContent = config.intro || 'Take a minute to pray for a place in the world.';
+  $('start-praying').href = prayerUrl(config);
+  if (demo) {
+    $('start-praying').firstChild.textContent = 'Explore Prayer.Global ';
+    $('overview-status').textContent = 'Demo data';
+    $('overview-coverage').textContent = '42.1%';
+    $('overview-participants').textContent = '312';
+    return;
+  }
+
+  const parts = relayParts(config.relay, config.id);
+  const status = $('overview-status');
+  let hasData = false;
+  status.textContent = 'Connecting';
+  async function refresh() {
+    try {
+      const state = await getRelay(parts);
+      $('overview-coverage').textContent = (progress(state) / 10).toFixed(1) + '%';
+      $('overview-participants').textContent = state.participants?.toLocaleString() ?? '—';
+      hasData = true;
+      status.textContent = 'Live relay';
+    } catch {
+      status.textContent = hasData ? 'Updates delayed' : 'Progress unavailable';
+    }
+    setTimeout(refresh, 30000);
+  }
+  refresh();
 }
 
 function counter(element, format) {
@@ -109,34 +299,28 @@ function counter(element, format) {
   };
 }
 
-async function showScreen() {
-  let parts, publicJoin;
-  try {
-    if (!demo) parts = relayParts(query.get('relay') ?? '', query.get('id') ?? '');
-    publicJoin = demo ? origin : inviteUrl(query.get('invite') || `${origin}/prayer_app/custom/${parts.public_key}/map`);
-  } catch {
-    showSetup();
-    $('form-status').textContent = 'This screen link is incomplete. Connect your relay to create a new one.';
-    return;
-  }
-
-  $('setup').hidden = true;
+async function showScreen(config, view, slug) {
+  const demo = config.demo === '1';
+  const parts = demo ? null : relayParts(config.relay, config.id);
+  const publicJoin = screenInvitation(base, config, slug);
   document.body.classList.add(view);
   $('display').hidden = false;
-  const config = Object.fromEntries(query);
-  delete config.view;
-  $('edit-link').href = screenUrl(config);
-  $('switch-view').href = screenUrl(config, view === 'side' ? 'led' : 'side');
+  const setup = appUrl(base, config);
+  if (slug) setup.searchParams.set('slug', slug);
+  $('edit-link').href = setup;
+  $('switch-view').href = appUrl(base, config, view === 'side' ? 'led' : 'side', slug);
   $('switch-view').textContent = view === 'side' ? 'Rear LED' : 'Side screen';
-  $('screen-org').textContent = query.get('org')?.slice(0, 42) || 'Prayer Relay';
-  $('screen-headline').textContent = query.get('headline')?.slice(0, 42) || 'Pray for the world';
-  const accent = query.get('accent');
-  if (/^#[0-9a-f]{6}$/i.test(accent)) document.documentElement.style.setProperty('--accent', accent);
+  $('screen-org').textContent = config.org || 'Prayer Relay';
+  $('screen-headline').textContent = config.headline || 'Pray for the world';
+  applyAccent(config.accent);
   const status = $('connection');
   status.textContent = demo ? 'Demo data' : 'Connecting';
   if (view === 'side') {
     $('join-link').href = $('qr-link').href = publicJoin;
-    $('join-link').textContent = demo ? 'Explore Prayer.Global' : publicJoin.replace(/^https:\/\//, '').replace(/\/$/, '');
+    const link = new URL(publicJoin);
+    const longOverview = link.origin === base && link.searchParams.get('view') === 'join';
+    $('join-link').textContent = longOverview ? 'Relay overview' : demo && !slug ? 'Explore Prayer.Global'
+      : publicJoin.replace(/^https:\/\//, '').replace(/\/$/, '');
     $('qr').src = await QRCode.toDataURL(publicJoin, { width: 320, margin: 4, errorCorrectionLevel: 'M' });
   }
 
@@ -257,5 +441,21 @@ async function showScreen() {
   else poll();
 }
 
-if (view === 'side' || view === 'led') showScreen();
-else showSetup();
+const view = query.get('view') || (vanityPath ? 'join' : '');
+const slug = vanityPath?.[1];
+const published = vanityPath || !allowedViews.includes(view) ? await publishedRelays() : {};
+const config = slug ? published[slug] : settings(Object.fromEntries(query));
+
+$('setup').hidden = true;
+if (slug && (!Object.hasOwn(published, slug) || !allowedViews.includes(view))) {
+  $('overview').classList.add('overview-error');
+  const heading = document.createElement('h1');
+  heading.textContent = 'Relay link unavailable';
+  $('overview').replaceChildren(heading);
+  $('overview').hidden = false;
+} else if (allowedViews.includes(view) && usableRelay(config)) {
+  if (view === 'join') showOverview(config);
+  else showScreen(config, view, slug);
+} else {
+  showSetup(config, published, view ? 'This relay link is incomplete. Connect your relay to create a new one.' : '');
+}
