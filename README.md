@@ -4,7 +4,7 @@ Give a public Prayer.Global relay a live map for your auditorium. The side scree
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ONE-ALL-Church/prayer-relay-display)
 
-[Try the side screen](https://prayer-relay-display.bscottdavis.workers.dev/?view=side&demo=1) · [Try the rear LED](https://prayer-relay-display.bscottdavis.workers.dev/?view=led&demo=1)
+[Try the side screen](https://prayer-relay-display.oneandall.workers.dev/?view=side&demo=1) · [Try the rear LED](https://prayer-relay-display.oneandall.workers.dev/?view=led&demo=1)
 
 ## Put it on your screens
 
