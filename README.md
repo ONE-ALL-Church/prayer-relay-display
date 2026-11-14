@@ -2,7 +2,7 @@
 
 Give a public Prayer.Global relay a live map for your auditorium. The side screen shows a QR code and participation totals. The rear LED view puts coverage at the top center for a wide display.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/bscottdavis/prayer-relay-display)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ONE-ALL-Church/prayer-relay-display)
 
 [Try the side screen](https://prayer-relay-display.bscottdavis.workers.dev/?view=side&demo=1) · [Try the rear LED](https://prayer-relay-display.bscottdavis.workers.dev/?view=led&demo=1)
 
