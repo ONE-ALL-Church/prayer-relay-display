@@ -71,7 +71,7 @@ export async function getRelay(parts, fetcher = fetch) {
   const response = await fetcher(origin + '/wp-json/prayer_app/v1/custom/display', {
     method: 'POST',
     credentials: 'omit',
-    redirect: 'error',
+    redirect: 'manual',
     headers: { 'content-type': 'application/json' },
     signal: AbortSignal.timeout(12000),
     body: JSON.stringify({ action: 'get_grid', parts }),

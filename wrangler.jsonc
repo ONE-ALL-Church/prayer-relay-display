@@ -8,6 +8,6 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/relay"]
+    "run_worker_first": ["/api/relay", "/api/publisher", "/api/published-relays"]
   }
 }

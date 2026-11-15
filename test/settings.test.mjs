@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appUrl, prayerUrl, screenInvitation, settings, usableRelay } from '../src/settings.mjs';
+import { appUrl, prayerUrl, screenInvitation, settings, suggestSlug, usableRelay } from '../src/settings.mjs';
 
 const base = 'https://prayer.example.org';
 const relay = { relay: 'abcd12', id: '123', org: 'Example Church', headline: 'Pray together', name: 'Operations' };
@@ -35,4 +35,12 @@ test('malformed relay IDs and unsafe prayer destinations cannot become valid lin
   assert.equal(usableRelay(settings({ ...relay, relay: 'abcd12extra' })), false);
   assert.equal(usableRelay(settings({ ...relay, id: '1234567890123' })), false);
   assert.equal(usableRelay(settings({ ...relay, invite: 'javascript:alert(1)' })), false);
+});
+
+test('short URL suggestions avoid reserved and occupied paths', () => {
+  assert.equal(suggestSlug('África & Asia', 'abcd12', { 'africa-asia': {} }), 'africa-asia-2');
+  assert.equal(suggestSlug('Demo', 'abcd12', {}), 'demo-2');
+  assert.equal(suggestSlug('祈り', 'abcd12', {}), 'relay-abcd12');
+  const long = 'a'.repeat(48);
+  assert.equal(suggestSlug(long, 'abcd12', { [long]: {} }), 'a'.repeat(46) + '-2');
 });

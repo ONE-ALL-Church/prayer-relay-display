@@ -23,7 +23,13 @@ Name each relay to find it in **Saved relays**. Each relay has its own organizat
 - **Open a branded overview** shows your organization name, introduction, and current coverage. Choose **Start praying** to open the configured prayer link.
 - **Open a branded overview at a short URL** puts a short address on the screen and in its QR code, such as `prayer-relay-display.example.workers.dev/r/outreach`.
 
-To publish a short URL, enter a unique slug in setup and save the relay. Copy its settings into [public/relays.json](public/relays.json) in your deployment repository and redeploy. Keep the entries for the other relays. Open the relay from **Published relays** to copy its screen links. A published relay uses the same URL across devices. Changing its published settings and redeploying updates existing links, including printed QR codes.
+If browser publishing is enabled, select **New relay**, paste a Prayer.Global link, and enter an optional relay name. Setup suggests a short URL. Open **Customize** to edit the URL or change the branding. Select **Preview relay**, sign in with the deployment’s publishing key, and select **Publish relay**.
+
+The share panel gives you a public link, a print-ready SVG QR code, and **Copy production links**. To update a relay, open it from **Published relays**, preview your changes, and select **Update published relay**. The same short URL and QR code open the new settings on reload.
+
+Select **Duplicate** to start a new relay with the same branding. Paste the new Prayer.Global link. Select **Archive relay** when an event ends. The same short URL opens a recap with the totals available at the time of archiving. Find the relay under **Archived relays** to share its recap or restore it. Share your publishing key only with organizers who can edit all relays on the deployment.
+
+For deployments that use a configuration file, enter a unique slug in setup and save the relay. Copy its settings into [public/relays.json](public/relays.json) in your deployment repository and redeploy. Keep the entries for the other relays. Open the relay from **Published relays** to copy its screen links. A published relay uses the same URL across devices. Changing its published settings and redeploying updates existing links, including printed QR codes.
 
 Open setup on the hostname you want to use on the screen. The short links use that hostname. This works on your deployment's `workers.dev` subdomain and any [Cloudflare Custom Domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) connected to the Worker. Cloudflare manages the hostname. The app manages the `/r/` paths.
 
@@ -33,13 +39,41 @@ Use the demo links to rehearse without a relay. Demo screens show **Demo data**.
 
 ## Hosting and data
 
-The project works on [Cloudflare Workers Free](https://developers.cloudflare.com/workers/platform/pricing/). It uses a `workers.dev` address, static assets, and one small relay lookup route. Cloudflare applies its Free plan request limit to the lookup. Screen refreshes read from Prayer.Global directly. There is no database, API key, or paid service to set up.
+The project works on [Cloudflare Workers Free](https://developers.cloudflare.com/workers/platform/pricing/). It uses a `workers.dev` address, static assets, and one small relay lookup route. Cloudflare applies its Free plan request limit to the lookup. Screen refreshes read from Prayer.Global directly. The standard deployment needs no database or API key. Browser publishing uses an optional Cloudflare D1 database.
 
 Standard screen links carry their settings in the URL. Short links load the published settings by slug. Both work on a fresh browser. Use public values only.
 
 Prayer.Global handles participation and owns the totals. The display reads aggregate statistics and highlights the places in the public grid. Its map loads the [Location Grid boundaries](https://github.com/DiscipleTools/location-grid-project) from the upstream host. The repository does not include those boundaries. Coverage totals can include places whose boundaries are missing. [Prayer.Global data sources](https://prayer.global/content_app/data_sources/)
 
 If the feed stops responding, the open screen keeps the last valid values and shows **Updates delayed**. It retries automatically. If you reload during an outage, it waits for the feed. If the map source is unavailable, totals can still update.
+
+## Enable browser publishing
+
+Use Wrangler while signed in to the Cloudflare account that owns your display. Each deployment needs its own database and publishing key. D1 is available on the [Workers Free plan](https://developers.cloudflare.com/d1/platform/pricing/).
+
+1. Create the database and add the binding in your deployment copy of `wrangler.jsonc`.
+
+   ```sh
+   npx wrangler d1 create prayer-relay-publishing --binding RELAYS --update-config
+   ```
+
+2. Apply the database migration and deploy the display.
+
+   ```sh
+   npx wrangler d1 migrations apply RELAYS --remote
+   npm run deploy
+   ```
+
+3. Generate a random publishing key with at least 32 characters. Save it in your password manager and paste it into the Wrangler prompt.
+
+   ```sh
+   openssl rand -hex 32
+   npx wrangler secret put PUBLISHER_KEY
+   ```
+
+4. Open setup, preview a relay, and sign in to publish it. Scan the new QR code with a phone before use.
+
+The publishing session expires after eight hours. Rotate the Worker secret to revoke existing sessions. Short URLs from `public/relays.json` stay managed in the deployment file. Choose an unused slug for a relay you publish from the browser.
 
 ## Develop locally
 

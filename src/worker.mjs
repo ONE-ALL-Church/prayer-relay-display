@@ -1,39 +1,55 @@
 import { origin, parseRelayPage, relayKey } from './relay.mjs';
+import { publishedRelays, publisherSession } from './published-relays.mjs';
+
+async function lookupRelayId(key) {
+  const upstream = await fetch(`${origin}/prayer_app/custom/${key}/display`, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(10000),
+    cf: { cacheEverything: true, cacheTtlByStatus: { '200': 300, '400-599': 0 } },
+  });
+  if (!upstream.ok) throw new Error('Prayer.Global could not open that relay.');
+
+  // Limit the HTML response before decoding. Only the public relay ID leaves this route.
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  let html = '';
+  let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 2_000_000) throw new Error('Relay page is too large.');
+      html += decoder.decode(value, { stream: true });
+    }
+    html += decoder.decode();
+  } finally {
+    await reader.cancel();
+  }
+  return parseRelayPage(html, key);
+}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/publisher' || url.pathname === '/api/published-relays') {
+      try {
+        return url.pathname === '/api/publisher'
+          ? await publisherSession(request, url, env)
+          : await publishedRelays(request, url, env, lookupRelayId);
+      } catch (error) {
+        console.error('Relay publishing request failed', error.name);
+        return Response.json({ error: 'Relay publishing is temporarily unavailable.' }, {
+          status: 503, headers: { 'Cache-Control': 'no-store' },
+        });
+      }
+    }
     if (url.pathname !== '/api/relay') return env.ASSETS.fetch(request);
     if (request.method !== 'GET') return new Response(null, { status: 405, headers: { Allow: 'GET' } });
     const key = url.searchParams.get('key') ?? '';
     if (!relayKey.test(key)) return Response.json({ error: 'Invalid relay link.' }, { status: 400 });
     try {
-      const upstream = await fetch(`${origin}/prayer_app/custom/${key}/display`, {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(10000),
-        cf: { cacheEverything: true, cacheTtlByStatus: { '200': 300, '400-599': 0 } },
-      });
-      if (!upstream.ok) return Response.json({ error: 'Prayer.Global could not open that relay.' }, { status: 502 });
-
-      // Limit the HTML response before decoding. Only the public relay ID leaves this route.
-      const reader = upstream.body.getReader();
-      const decoder = new TextDecoder();
-      let html = '';
-      let size = 0;
-      try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          size += value.byteLength;
-          if (size > 2_000_000) throw new Error('Relay page is too large.');
-          html += decoder.decode(value, { stream: true });
-        }
-        html += decoder.decode();
-      } finally {
-        await reader.cancel();
-      }
-
-      return Response.json({ id: parseRelayPage(html, key) }, {
+      return Response.json({ id: await lookupRelayId(key) }, {
         headers: { 'cache-control': 'public, max-age=300' },
       });
     } catch (error) {
