@@ -8,6 +8,19 @@ function shortText(value, limit) {
   return typeof value === 'string' ? value.trim().slice(0, limit) : '';
 }
 
+export function suggestSlug(name, relay, published) {
+  const fromName = name.normalize('NFKD').replace(/\p{Mark}/gu, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48).replace(/-$/, '');
+  const base = fromName || (relay ? 'relay-' + relay : 'relay');
+  let candidate = base;
+  let number = 2;
+  while (candidate === 'demo' || Object.hasOwn(published, candidate)) {
+    const suffix = '-' + number++;
+    candidate = base.slice(0, 48 - suffix.length).replace(/-$/, '') + suffix;
+  }
+  return candidate;
+}
+
 export function inviteUrl(value) {
   const url = new URL(value);
   if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Use a public HTTPS prayer link.');

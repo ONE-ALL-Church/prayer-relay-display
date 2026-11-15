@@ -1,4 +1,4 @@
-import { relayKey } from './relay.mjs';
+import { getRelay, progress, relayKey, relayParts } from './relay.mjs';
 import { settings, slugPattern, usableRelay } from './settings.mjs';
 import { boundedJson, canPublish, matchesPublisherKey, publisherCookie, publisherRequest, sessionCookie, signedIn } from './publisher.mjs';
 
@@ -27,15 +27,50 @@ export async function publisherSession(request, url, env) {
   return response({ signedIn: true }, 200, { 'Set-Cookie': cookie });
 }
 
+function relayRecord(row) {
+  const record = { config: JSON.parse(row.config), revision: row.revision };
+  if (row.archived_at) {
+    record.archivedAt = row.archived_at;
+    record.summary = row.summary ? JSON.parse(row.summary) : null;
+  }
+  return record;
+}
+
+async function changeArchive(db, slug, revision, archived) {
+  const row = await db.prepare('SELECT * FROM published_relays WHERE slug = ? AND revision = ?')
+    .bind(slug, revision).first();
+  if (!row || Boolean(row.archived_at) === archived) return null;
+
+  let summary = null;
+  if (archived) {
+    try {
+      const config = JSON.parse(row.config);
+      const state = await getRelay(relayParts(config.relay, config.id), (url, options) => fetch(url, {
+        ...options, signal: AbortSignal.timeout(4500),
+      }));
+      summary = JSON.stringify({ coverage: progress(state), participants: state.participants, minutes: state.minutes });
+    } catch {
+      // Keep the short URL available even if the prayer feed is unavailable at close.
+    }
+  }
+
+  const date = archived ? new Date().toISOString() : null;
+  const updated = await db.prepare(`UPDATE published_relays
+    SET archived_at = ?, summary = ?, revision = revision + 1
+    WHERE slug = ? AND revision = ?
+    RETURNING *`).bind(date, summary, slug, revision).first();
+  return updated ? relayRecord(updated) : null;
+}
+
 export async function publishedRelays(request, url, env, lookupRelayId) {
   if (request.method === 'GET') {
     if (!env.RELAYS) return response({ relays: {} });
     const slug = url.searchParams.get('slug');
     if (slug !== null && !validSlug(slug)) return response({ relays: {} });
     const rows = slug === null
-      ? await env.RELAYS.prepare('SELECT slug, config, revision FROM published_relays ORDER BY slug').all()
-      : await env.RELAYS.prepare('SELECT slug, config, revision FROM published_relays WHERE slug = ?').bind(slug).all();
-    const relays = Object.fromEntries(rows.results.map(row => [row.slug, { config: JSON.parse(row.config), revision: row.revision }]));
+      ? await env.RELAYS.prepare('SELECT * FROM published_relays ORDER BY slug').all()
+      : await env.RELAYS.prepare('SELECT * FROM published_relays WHERE slug = ?').bind(slug).all();
+    const relays = Object.fromEntries(rows.results.map(row => [row.slug, relayRecord(row)]));
     return response({ relays });
   }
 
@@ -49,10 +84,16 @@ export async function publishedRelays(request, url, env, lookupRelayId) {
   } catch {
     return response({ error: 'Invalid relay settings.' }, 400);
   }
-  const { slug, config: submitted, revision = null } = body ?? {};
+  const { slug, config: submitted, revision = null, action = 'publish' } = body ?? {};
   if (!validSlug(slug) || (revision !== null && (!Number.isSafeInteger(revision) || revision < 1))) {
     return response({ error: 'Enter a valid short URL. Use lowercase letters, numbers, and hyphens.' }, 400);
   }
+  if (action === 'archive' || action === 'restore') {
+    if (!revision) return response({ error: 'Open a published relay first.' }, 400);
+    const record = await changeArchive(env.RELAYS, slug, revision, action === 'archive');
+    return record ? response(record) : response({ error: 'This relay changed elsewhere. Reload setup before trying again.' }, 409);
+  }
+  if (action !== 'publish') return response({ error: 'Invalid publishing action.' }, 400);
   const config = settings(submitted ?? {});
   if (config.demo || !relayKey.test(config.relay) || config.qr !== 'vanity' || config.invite.length > 240) {
     return response({ error: 'Choose a public Prayer.Global relay and a short URL for its overview.' }, 400);
@@ -74,7 +115,7 @@ export async function publishedRelays(request, url, env, lookupRelayId) {
   const result = revision === null
     ? await env.RELAYS.prepare('INSERT INTO published_relays (slug, config) VALUES (?, ?) ON CONFLICT (slug) DO NOTHING RETURNING revision')
       .bind(slug, record).first()
-    : await env.RELAYS.prepare('UPDATE published_relays SET config = ?, revision = revision + 1 WHERE slug = ? AND revision = ? RETURNING revision')
+    : await env.RELAYS.prepare('UPDATE published_relays SET config = ?, revision = revision + 1 WHERE slug = ? AND revision = ? AND archived_at IS NULL RETURNING revision')
       .bind(record, slug, revision).first();
   if (!result) return response({ error: 'This short URL was published or updated elsewhere. Reload setup and open the published relay before editing.' }, 409);
   return response({ config, revision: result.revision });

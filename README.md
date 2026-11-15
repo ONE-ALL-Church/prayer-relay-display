@@ -23,7 +23,11 @@ Name each relay to find it in **Saved relays**. Each relay has its own organizat
 - **Open a branded overview** shows your organization name, introduction, and current coverage. Choose **Start praying** to open the configured prayer link.
 - **Open a branded overview at a short URL** puts a short address on the screen and in its QR code, such as `prayer-relay-display.example.workers.dev/r/outreach`.
 
-If browser publishing is enabled, enter a unique slug in setup and save the relay. Sign in with the deployment's publishing key and select **Publish relay**. To update a published relay, open it under **Published relays**, save your changes, and select **Update published relay**. The same short URL and QR code will use the new settings when opened or reloaded. Share your publishing key only with organizers who can edit all relays on the deployment.
+If browser publishing is enabled, select **New relay**, paste a Prayer.Global link, and enter an optional relay name. Setup suggests a short URL. Open **Customize** to edit the URL or change the branding. Select **Preview relay**, sign in with the deployment’s publishing key, and select **Publish relay**.
+
+The share panel gives you a public link, a print-ready SVG QR code, and **Copy production links**. To update a relay, open it from **Published relays**, preview your changes, and select **Update published relay**. The same short URL and QR code open the new settings on reload.
+
+Select **Duplicate** to start a new relay with the same branding. Paste the new Prayer.Global link. Select **Archive relay** when an event ends. The same short URL opens a recap with the totals available at the time of archiving. Find the relay under **Archived relays** to share its recap or restore it. Share your publishing key only with organizers who can edit all relays on the deployment.
 
 For deployments that use a configuration file, enter a unique slug in setup and save the relay. Copy its settings into [public/relays.json](public/relays.json) in your deployment repository and redeploy. Keep the entries for the other relays. Open the relay from **Published relays** to copy its screen links. A published relay uses the same URL across devices. Changing its published settings and redeploying updates existing links, including printed QR codes.
 
@@ -67,7 +71,7 @@ Use Wrangler while signed in to the Cloudflare account that owns your display. E
    npx wrangler secret put PUBLISHER_KEY
    ```
 
-4. Open setup, save a relay with the short URL option, and sign in to publish it. Scan the new QR code with a phone before use.
+4. Open setup, preview a relay, and sign in to publish it. Scan the new QR code with a phone before use.
 
 The publishing session expires after eight hours. Rotate the Worker secret to revoke existing sessions. Short URLs from `public/relays.json` stay managed in the deployment file. Choose an unused slug for a relay you publish from the browser.
 

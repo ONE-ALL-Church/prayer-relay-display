@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import { origin, readRelayUrl, relayParts, getRelay, progress } from './relay.mjs';
 import { drawMap, loadMap } from './map.mjs';
-import { appUrl, inviteUrl, prayerUrl, screenInvitation, settings, slugPattern, usableRelay } from './settings.mjs';
+import { appUrl, inviteUrl, prayerUrl, screenInvitation, settings, slugPattern, suggestSlug, usableRelay } from './settings.mjs';
 
 const $ = id => document.getElementById(id);
 const currentUrl = new URL(location.href);
@@ -108,6 +108,13 @@ function showSetup(prefill, published, session, initialMessage = '') {
   let openedSlug;
   let draft;
   let busy = false;
+  let customSlug = false;
+  let previewRequest = 0;
+  const relayInput = $('relay');
+  const nameInput = $('relay-name');
+  const slugInput = $('vanity-slug');
+  const customize = $('customize-relay');
+  const archiveButton = $('archive-relay');
   const publisherStatus = $('publisher-status');
   const publisherForm = $('publisher-form');
 
@@ -117,7 +124,11 @@ function showSetup(prefill, published, session, initialMessage = '') {
     publisherForm.hidden = session.signedIn || !available;
     $('publisher-actions').hidden = !session.signedIn || !available;
     const button = $('publish-relay');
+    button.hidden = Boolean(draft?.archived);
     button.disabled = busy || !draft || draft.isPublished || draft.conflict;
+    archiveButton.hidden = !draft?.isPublished || !draft.revision;
+    archiveButton.disabled = busy;
+    archiveButton.textContent = draft?.archived ? 'Restore relay' : 'Archive relay';
     button.textContent = draft?.revision ? 'Update published relay' : 'Publish relay';
   }
   status.textContent = initialMessage;
@@ -129,11 +140,19 @@ function showSetup(prefill, published, session, initialMessage = '') {
     $('vanity-settings').hidden = choice !== 'vanity';
     $('vanity-slug').required = choice === 'vanity';
     $('vanity-slug').disabled = choice !== 'vanity';
-    const slug = $('vanity-slug').value;
-    $('short-preview').textContent = slugPattern.test(slug) ? appUrl(base, {}, undefined, slug).href : '';
+    if (choice === 'vanity' && !customSlug) {
+      let key = '';
+      try { key = readRelayUrl(relayInput.value); } catch { /* Keep the suggestion based on the name. */ }
+      slugInput.value = nameInput.value.trim() || key ? suggestSlug(nameInput.value, key, published) : '';
+    }
+    const slug = slugInput.value;
+    $('short-preview').textContent = choice === 'vanity' && slugPattern.test(slug)
+      ? 'Short URL ' + appUrl(base, {}, undefined, slug).host + '/r/' + slug : '';
+    $('preview-relay').textContent = session.enabled ? 'Preview relay' : 'Save relay and create links';
   }
 
   function fill(config, slug = '') {
+    customSlug = Boolean(slug);
     $('relay').value = relayKeyUrl(config.relay);
     const fields = { 'relay-name': config.name, org: config.org, headline: config.headline, invite: config.invite,
       'intro-copy': config.intro, accent: config.accent, 'qr-destination': config.qr, 'vanity-slug': slug };
@@ -141,18 +160,69 @@ function showSetup(prefill, published, session, initialMessage = '') {
     showDestination();
   }
 
+  async function showSharePanel(slug, archived) {
+    const publicUrl = appUrl(base, {}, undefined, slug);
+    const link = $('shared-relay-url');
+    const qr = $('share-qr');
+    const download = $('download-relay-qr');
+    link.href = publicUrl.href;
+    link.textContent = publicUrl.host + publicUrl.pathname;
+    qr.hidden = true;
+    download.hidden = true;
+    $('copy-production-links').hidden = archived;
+    $('share-relay').hidden = false;
+    try {
+      const svg = await QRCode.toString(publicUrl.href, { type: 'svg', margin: 4, errorCorrectionLevel: 'M' });
+      if (link.href !== publicUrl.href || $('share-relay').hidden) return;
+      const source = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      qr.src = source;
+      qr.hidden = false;
+      download.href = source;
+      download.download = slug + '-qr.svg';
+      download.hidden = false;
+    } catch {
+      $('copy-status').textContent = 'Could not generate the QR code. You can copy the relay link.';
+    }
+  }
+
+  async function copyShare(text, message) {
+    try {
+      await navigator.clipboard.writeText(text);
+      $('copy-status').textContent = message;
+    } catch {
+      $('copy-status').textContent = 'Could not copy. Open a link to copy its address.';
+    }
+  }
+
+  $('copy-relay-link').addEventListener('click', () => copyShare($('shared-relay-url').href, 'Relay link copied.'));
+  $('copy-production-links').addEventListener('click', () => {
+    const publicUrl = new URL($('shared-relay-url').href);
+    const side = new URL(publicUrl);
+    const led = new URL(publicUrl);
+    side.searchParams.set('view', 'side');
+    led.searchParams.set('view', 'led');
+    copyShare(['Side screen ' + side.href, 'Rear LED ' + led.href, 'Participant overview ' + publicUrl.href].join('\n'), 'Production links copied.');
+  });
+
   function showLinks(config, slug = '') {
     const entry = published[slug];
     const isPublished = entry && JSON.stringify(settings(entry.config)) === JSON.stringify(config);
     const revision = slug === openedSlug ? entry?.revision : undefined;
-    draft = { config, slug, revision, isPublished, conflict: Boolean(entry && !revision && !isPublished) };
+    const archived = Boolean(entry?.archivedAt && isPublished);
+    draft = { config, slug, revision, isPublished, archived,
+      conflict: Boolean(entry && !isPublished && (!revision || entry.archivedAt)) };
     const publishedSlug = isPublished ? slug : '';
     const linkedConfig = !isPublished && config.qr === 'vanity' ? { ...config, qr: 'overview' } : config;
     $('generated').replaceChildren();
     $('copy-status').textContent = '';
-    addResult('Side screen', appUrl(base, linkedConfig, 'side', publishedSlug));
-    addResult('Rear LED', appUrl(base, linkedConfig, 'led', publishedSlug));
-    addResult('Participant overview', appUrl(base, linkedConfig, 'join', publishedSlug));
+    $('results-title').textContent = archived ? 'Share the recap' : isPublished ? 'Share this relay' : 'Preview and share';
+    $('share-relay').hidden = true;
+    if (isPublished) showSharePanel(slug, archived);
+    if (!archived) {
+      addResult('Side screen', appUrl(base, linkedConfig, 'side', publishedSlug));
+      addResult('Rear LED', appUrl(base, linkedConfig, 'led', publishedSlug));
+    }
+    addResult(archived ? 'Relay recap' : 'Participant overview', appUrl(base, linkedConfig, 'join', publishedSlug));
     const setup = appUrl(base, isPublished ? {} : config);
     if (isPublished) setup.searchParams.set('edit', slug);
     else if (slug) setup.searchParams.set('slug', slug);
@@ -163,8 +233,11 @@ function showSetup(prefill, published, session, initialMessage = '') {
       .filter(([, record]) => !record.revision)
       .map(([key, record]) => [key, record.config]));
     $('profile-json').value = JSON.stringify({ ...bundled, [slug]: config }, null, 2);
-    if (isPublished && config.qr === 'vanity') $('publish-status').textContent = 'Short URL is published.';
-    else if (session.enabled && draft.conflict) {
+    if (archived) $('publish-status').textContent = 'Archived. The same short URL opens the recap.';
+    else if (isPublished && config.qr === 'vanity') $('publish-status').textContent = 'Short URL is published.';
+    else if (entry?.archivedAt && draft.conflict) {
+      $('publish-status').textContent = 'Restore this relay before changing its published settings, or choose a different short URL.';
+    } else if (session.enabled && draft.conflict) {
       $('publish-status').textContent = entry.revision
         ? 'This short URL is in use. Open it from Published relays to edit it, or choose another short URL.'
         : 'This short URL is managed in the deployment file. Choose another short URL to publish here.';
@@ -186,12 +259,13 @@ function showSetup(prefill, published, session, initialMessage = '') {
       select.className = 'secondary';
       select.textContent = config.name || config.headline || config.org || config.relay;
       select.addEventListener('click', () => {
+        previewRequest++;
         editing = key;
         openedSlug = undefined;
         publisherStatus.textContent = '';
         fill(config, record.slug);
         showLinks(config, record.slug);
-        status.textContent = 'Relay loaded. Save to update its settings.';
+        status.textContent = 'Relay loaded. Preview any changes before sharing.';
         $('relay-name').focus();
       });
       const remove = document.createElement('button');
@@ -220,19 +294,40 @@ function showSetup(prefill, published, session, initialMessage = '') {
   }
 
   function openPublished(slug) {
+    previewRequest++;
     const config = settings(published[slug].config);
     editing = undefined;
     openedSlug = slug;
     publisherStatus.textContent = '';
     fill(config, slug);
     showLinks(config, slug);
-    status.textContent = 'Relay loaded. Save your changes before publishing an update.';
+    status.textContent = published[slug].archivedAt
+      ? 'Restore this relay before editing its published settings.'
+      : 'Preview your changes before publishing an update.';
+  }
+
+  function startRelay(template) {
+    previewRequest++;
+    editing = undefined;
+    openedSlug = undefined;
+    draft = undefined;
+    customize.open = false;
+    $('results').hidden = true;
+    const config = template ? {
+      org: template.org, headline: template.headline, intro: template.intro, accent: template.accent,
+      qr: session.enabled ? 'vanity' : template.qr,
+    } : { qr: session.enabled ? 'vanity' : 'direct' };
+    fill(settings(config));
+    status.textContent = template ? 'Branding copied. Paste the new Prayer.Global relay link.' : '';
+    relayInput.focus();
   }
 
   function renderPublished() {
-    const list = $('published-list');
-    list.replaceChildren();
-    for (const [slug, { config }] of Object.entries(published)) {
+    const active = $('published-list');
+    const archived = $('archived-list');
+    active.replaceChildren();
+    archived.replaceChildren();
+    for (const [slug, { config, archivedAt }] of Object.entries(published)) {
       if (config.demo) continue;
       const item = document.createElement('li');
       const select = document.createElement('button');
@@ -241,32 +336,44 @@ function showSetup(prefill, published, session, initialMessage = '') {
       select.textContent = config.name || config.headline || slug;
       select.addEventListener('click', () => {
         openPublished(slug);
-        $('relay-name').focus();
+        nameInput.focus();
       });
-      item.append(select);
-      list.append(item);
+      const duplicate = document.createElement('button');
+      duplicate.type = 'button';
+      duplicate.className = 'secondary';
+      duplicate.textContent = 'Duplicate';
+      duplicate.setAttribute('aria-label', 'Duplicate ' + select.textContent);
+      duplicate.addEventListener('click', () => startRelay(config));
+      item.append(select, duplicate);
+      (archivedAt ? archived : active).append(item);
     }
-    $('published-relays').hidden = !list.childElementCount;
+    $('published-relays').hidden = !active.childElementCount;
+    $('archived-relays').hidden = !archived.childElementCount;
   }
 
   const editSlug = query.get('edit');
+  const hasPrefill = Boolean(prefill.relay || query.has('qr'));
   if (editSlug && Object.hasOwn(published, editSlug) && !published[editSlug].config.demo) openPublished(editSlug);
-  else fill(prefill, query.get('slug') ?? '');
+  else fill(hasPrefill ? prefill : settings({ qr: session.enabled ? 'vanity' : 'direct' }), query.get('slug') ?? '');
   renderSaved();
   renderPublished();
   $('qr-destination').addEventListener('change', showDestination);
-  $('vanity-slug').addEventListener('input', showDestination);
-  $('new-relay').addEventListener('click', () => {
-    editing = undefined;
-    openedSlug = undefined;
-    draft = undefined;
-    fill(settings({}));
-    status.textContent = '';
-    $('results').hidden = true;
-    $('relay').focus();
+  for (const field of [relayInput, nameInput]) field.addEventListener('input', showDestination);
+  slugInput.addEventListener('input', () => {
+    customSlug = Boolean(slugInput.value);
+    showDestination();
   });
+  form.addEventListener('invalid', event => {
+    if (customize.contains(event.target)) customize.open = true;
+  }, true);
+  $('new-relay').addEventListener('click', () => startRelay());
+
   form.addEventListener('input', () => {
-    if (!draft) return;
+    previewRequest++;
+    if (!draft) {
+      if ($('preview-relay').disabled) status.textContent = 'Preview your changes to create updated links.';
+      return;
+    }
     draft = undefined;
     showPublisher();
     $('results').hidden = true;
@@ -284,6 +391,7 @@ function showSetup(prefill, published, session, initialMessage = '') {
       publisherStatus.textContent = 'Signed in. Review your changes before publishing.';
       showPublisher();
       if (!$('publish-relay').disabled) $('publish-relay').focus();
+      else if (!archiveButton.hidden) archiveButton.focus();
       else $('publisher-sign-out').focus();
     } catch (error) {
       publisherStatus.textContent = error.message;
@@ -321,9 +429,35 @@ function showSetup(prefill, published, session, initialMessage = '') {
       renderPublished();
       if (draft === pending) {
         openedSlug = slug;
+        fill(record.config, slug);
         showLinks(record.config, slug);
         publisherStatus.textContent = 'Published. Phones and screens can open this short URL.';
         $('generated').querySelector('a').focus();
+      }
+    } catch (error) {
+      if (error.status === 401) session.signedIn = false;
+      publisherStatus.textContent = error.message;
+    } finally {
+      busy = false;
+      showPublisher();
+    }
+  });
+
+  archiveButton.addEventListener('click', async () => {
+    if (!draft?.isPublished || !draft.revision || busy) return;
+    const pending = draft;
+    const { slug, revision, archived } = pending;
+    if (!archived && !window.confirm('Archive this relay? Its short URL and QR code will open a recap.')) return;
+    busy = true;
+    showPublisher();
+    publisherStatus.textContent = archived ? 'Restoring…' : 'Archiving…';
+    try {
+      published[slug] = await postJson('/api/published-relays', { slug, revision, action: archived ? 'restore' : 'archive' });
+      renderPublished();
+      if (draft === pending) {
+        openPublished(slug);
+        publisherStatus.textContent = archived ? 'Relay restored.' : 'Relay archived.';
+        archiveButton.focus();
       }
     } catch (error) {
       if (error.status === 401) session.signedIn = false;
@@ -338,18 +472,19 @@ function showSetup(prefill, published, session, initialMessage = '') {
     event.preventDefault();
     const button = event.submitter;
     button.disabled = true;
+    const request = ++previewRequest;
     status.textContent = 'Checking the relay…';
     try {
-      const key = readRelayUrl($('relay').value);
+      const key = readRelayUrl(relayInput.value);
       const invite = $('invite').value.trim() ? inviteUrl($('invite').value) : '';
-      const response = await fetch('/api/relay?' + new URLSearchParams({ key }), { signal: AbortSignal.timeout(14000) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? 'The relay could not be verified.');
-      await getRelay(relayParts(key, result.id));
       const qr = $('qr-destination').value;
-      const slug = qr === 'vanity' ? $('vanity-slug').value : '';
-      const config = settings({ relay: key, id: result.id, name: $('relay-name').value,
-        org: $('org').value, headline: $('headline').value, invite, intro: $('intro-copy').value, accent: $('accent').value, qr });
+      const slug = qr === 'vanity' ? slugInput.value : '';
+      const values = { relay: key, name: nameInput.value, org: $('org').value,
+        headline: $('headline').value, invite, intro: $('intro-copy').value, accent: $('accent').value, qr };
+      const result = await fetchJson('/api/relay?' + new URLSearchParams({ key }));
+      await getRelay(relayParts(key, result.id));
+      if (request !== previewRequest) return;
+      const config = settings({ ...values, id: result.id });
       const recordKey = editing ?? crypto.randomUUID();
       const updated = { ...savedRelays(), [recordKey]: { config, slug } };
       const stored = storeRelays(updated);
@@ -361,8 +496,11 @@ function showSetup(prefill, published, session, initialMessage = '') {
       publisherStatus.textContent = '';
       showLinks(config, slug);
       status.textContent = stored ? 'Screen links are ready. Relay saved in this browser.' : 'Screen links are ready. Copy the setup link to save your settings.';
-      $('generated').querySelector('a').focus();
+      if (session.enabled && draft.config.qr === 'vanity' && !draft.conflict && !draft.isPublished) {
+        (session.signedIn ? $('publish-relay') : $('publisher-key')).focus();
+      } else $('generated').querySelector('a').focus();
     } catch (error) {
+      if (request !== previewRequest) return;
       status.textContent = error instanceof TypeError || error.name === 'TimeoutError'
         ? 'Could not connect. Check the links and try again.' : error.message;
     } finally {
@@ -375,13 +513,31 @@ function relayKeyUrl(key) {
   return /^[0-9a-f]{6}$/.test(key) ? `${origin}/prayer_app/custom/${key}/display` : '';
 }
 
-function showOverview(config) {
+function showOverview(config, record) {
   const demo = config.demo === '1';
   $('overview').hidden = false;
   applyAccent(config.accent);
   $('overview-org').textContent = config.org || 'Prayer Relay';
   $('overview-headline').textContent = config.headline || 'Pray for the world';
   $('overview-intro').textContent = config.intro || 'Take a minute to pray for a place in the world.';
+  if (record?.archivedAt) {
+    const summary = record.summary;
+    $('overview-intro').textContent = 'Thank you for praying with us.';
+    $('start-praying').hidden = true;
+    $('overview-progress-title').textContent = 'Relay recap';
+    $('overview-status').textContent = 'Event ended';
+    if (summary) {
+      $('overview-coverage').textContent = (summary.coverage / 10).toFixed(1) + '%';
+      $('overview-participants').textContent = summary.participants?.toLocaleString() ?? '—';
+      $('overview-minutes').textContent = summary.minutes?.toLocaleString() ?? '—';
+      $('overview-minutes-stat').hidden = summary.minutes == null;
+    } else {
+      $('overview-status').textContent = 'Final totals unavailable';
+      $('overview').querySelector('dl').hidden = true;
+      $('overview-credit').hidden = true;
+    }
+    return;
+  }
   $('start-praying').href = prayerUrl(config);
   if (demo) {
     $('start-praying').firstChild.textContent = 'Explore Prayer.Global ';
@@ -592,7 +748,7 @@ if (slug && (!Object.hasOwn(published, slug) || !allowedViews.includes(view))) {
   $('overview').replaceChildren(heading);
   $('overview').hidden = false;
 } else if (allowedViews.includes(view) && usableRelay(config)) {
-  if (view === 'join') showOverview(config);
+  if (view === 'join' || published[slug]?.archivedAt) showOverview(config, published[slug]);
   else showScreen(config, view, slug);
 } else {
   showSetup(config, published, session, view ? 'This relay link is incomplete. Connect your relay to create a new one.' : '');

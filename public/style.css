@@ -162,3 +162,17 @@ select, textarea {
 #publisher-form { margin-block: .75rem; }
 #publisher-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: .75rem; }
 #publisher-status:empty, #publish-status:empty, #copy-status:empty { display: none; }
+
+.relay-form-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .9rem; }
+.relay-form-heading h2 { margin: 0; }
+.customize-fields { display: grid; gap: .55rem; padding-top: .8rem; }
+#customize-relay summary, #archived-relays summary { cursor: pointer; font-weight: 650; }
+#short-preview:empty { display: none; }
+.relay-row-actions, .share-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.relay-list li { flex-wrap: wrap; }
+#share-relay { display: grid; justify-items: start; gap: .75rem; margin: 1rem 0; }
+#shared-relay-url { overflow-wrap: anywhere; }
+#share-qr { background: white; border-radius: 4px; }
+#download-relay-qr { text-decoration: none; }
+
+#results { margin: 0 0 1.2rem; }
