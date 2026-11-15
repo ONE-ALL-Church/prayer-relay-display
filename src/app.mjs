@@ -12,19 +12,40 @@ const savedKey = 'prayer-relay-display:saved-relays';
 const vanityPath = currentUrl.pathname.match(/^\/r\/([^/]+)\/?$/);
 const allowedViews = ['side', 'led', 'join'];
 
-async function publishedRelays() {
-  try {
-    const response = await fetch('/relays.json');
-    if (!response.ok) return {};
-    const records = await response.json();
-    return Object.fromEntries(Object.entries(records).flatMap(([slug, record]) => {
-      if (!slugPattern.test(slug) || slug.length > 48 || !record || typeof record !== 'object') return [];
-      const config = settings(record);
-      return usableRelay(config) ? [[slug, config]] : [];
-    }));
-  } catch {
-    return {};
+async function fetchJson(path, options) {
+  const response = await fetch(path, { signal: AbortSignal.timeout(14000), ...options });
+  const result = await response.json();
+  if (!response.ok) {
+    const error = new Error(result.error || 'Could not reach the relay service.');
+    error.status = response.status;
+    throw error;
   }
+  return result;
+}
+
+function postJson(path, body) {
+  return fetchJson(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+async function publishedRelays(slug) {
+  const search = slug ? '?' + new URLSearchParams({ slug }) : '';
+  const [bundled, hosted] = await Promise.all([
+    fetchJson('/relays.json').catch(() => ({})),
+    fetchJson('/api/published-relays' + search).catch(() => ({})),
+  ]);
+  const published = Object.create(null);
+  for (const [key, record] of Object.entries(bundled)) {
+    const config = settings(record ?? {});
+    if (slugPattern.test(key) && key.length <= 48 && usableRelay(config)) published[key] = { config };
+  }
+  for (const [key, record] of Object.entries(hosted.relays ?? {})) {
+    if (!Object.hasOwn(published, key)) published[key] = record;
+  }
+  return published;
 }
 
 function savedRelays() {
@@ -79,11 +100,26 @@ function addResult(name, url) {
   $('generated').append(row);
 }
 
-function showSetup(prefill, published, initialMessage = '') {
+function showSetup(prefill, published, session, initialMessage = '') {
   const form = $('relay-form');
   const status = $('form-status');
   let editing;
   let records = savedRelays();
+  let openedSlug;
+  let draft;
+  let busy = false;
+  const publisherStatus = $('publisher-status');
+  const publisherForm = $('publisher-form');
+
+  function showPublisher() {
+    const available = session.enabled && draft?.config.qr === 'vanity';
+    $('browser-publishing').hidden = !available;
+    publisherForm.hidden = session.signedIn || !available;
+    $('publisher-actions').hidden = !session.signedIn || !available;
+    const button = $('publish-relay');
+    button.disabled = busy || !draft || draft.isPublished || draft.conflict;
+    button.textContent = draft?.revision ? 'Update published relay' : 'Publish relay';
+  }
   status.textContent = initialMessage;
   $('setup').hidden = false;
 
@@ -106,7 +142,10 @@ function showSetup(prefill, published, initialMessage = '') {
   }
 
   function showLinks(config, slug = '') {
-    const isPublished = Object.hasOwn(published, slug) && JSON.stringify(published[slug]) === JSON.stringify(config);
+    const entry = published[slug];
+    const isPublished = entry && JSON.stringify(settings(entry.config)) === JSON.stringify(config);
+    const revision = slug === openedSlug ? entry?.revision : undefined;
+    draft = { config, slug, revision, isPublished, conflict: Boolean(entry && !revision && !isPublished) };
     const publishedSlug = isPublished ? slug : '';
     const linkedConfig = !isPublished && config.qr === 'vanity' ? { ...config, qr: 'overview' } : config;
     $('generated').replaceChildren();
@@ -114,15 +153,24 @@ function showSetup(prefill, published, initialMessage = '') {
     addResult('Side screen', appUrl(base, linkedConfig, 'side', publishedSlug));
     addResult('Rear LED', appUrl(base, linkedConfig, 'led', publishedSlug));
     addResult('Participant overview', appUrl(base, linkedConfig, 'join', publishedSlug));
-    const setup = appUrl(base, config);
-    if (slug) setup.searchParams.set('slug', slug);
+    const setup = appUrl(base, isPublished ? {} : config);
+    if (isPublished) setup.searchParams.set('edit', slug);
+    else if (slug) setup.searchParams.set('slug', slug);
     addResult('Setup link', setup);
 
-    $('vanity-help').hidden = isPublished || config.qr !== 'vanity';
-    $('vanity-help').open = !isPublished && config.qr === 'vanity';
-    $('profile-json').value = JSON.stringify({ ...published, [slug]: config }, null, 2);
-    $('publish-status').textContent = !isPublished && config.qr === 'vanity'
+    $('vanity-help').hidden = session.enabled || isPublished || config.qr !== 'vanity';
+    const bundled = Object.fromEntries(Object.entries(published)
+      .filter(([, record]) => !record.revision)
+      .map(([key, record]) => [key, record.config]));
+    $('profile-json').value = JSON.stringify({ ...bundled, [slug]: config }, null, 2);
+    if (isPublished && config.qr === 'vanity') $('publish-status').textContent = 'Short URL is published.';
+    else if (session.enabled && draft.conflict) {
+      $('publish-status').textContent = entry.revision
+        ? 'This short URL is in use. Open it from Published relays to edit it, or choose another short URL.'
+        : 'This short URL is managed in the deployment file. Choose another short URL to publish here.';
+    } else $('publish-status').textContent = config.qr === 'vanity'
       ? 'These links preview the branded overview. Publish the short URL to use it in the QR code.' : '';
+    showPublisher();
     $('results').hidden = false;
   }
 
@@ -139,6 +187,8 @@ function showSetup(prefill, published, initialMessage = '') {
       select.textContent = config.name || config.headline || config.org || config.relay;
       select.addEventListener('click', () => {
         editing = key;
+        openedSlug = undefined;
+        publisherStatus.textContent = '';
         fill(config, record.slug);
         showLinks(config, record.slug);
         status.textContent = 'Relay loaded. Save to update its settings.';
@@ -169,35 +219,119 @@ function showSetup(prefill, published, initialMessage = '') {
     $('saved-relays').hidden = !list.childElementCount;
   }
 
-  const publishedList = $('published-list');
-  for (const [slug, config] of Object.entries(published)) {
-    if (config.demo) continue;
-    const item = document.createElement('li');
-    const select = document.createElement('button');
-    select.type = 'button';
-    select.className = 'secondary';
-    select.textContent = config.name || config.headline || slug;
-    select.addEventListener('click', () => {
-      editing = undefined;
-      fill(config, slug);
-      showLinks(config, slug);
-      $('generated').querySelector('a').focus();
-    });
-    item.append(select);
-    publishedList.append(item);
+  function openPublished(slug) {
+    const config = settings(published[slug].config);
+    editing = undefined;
+    openedSlug = slug;
+    publisherStatus.textContent = '';
+    fill(config, slug);
+    showLinks(config, slug);
+    status.textContent = 'Relay loaded. Save your changes before publishing an update.';
   }
-  $('published-relays').hidden = !publishedList.childElementCount;
 
-  fill(prefill, query.get('slug') ?? '');
+  function renderPublished() {
+    const list = $('published-list');
+    list.replaceChildren();
+    for (const [slug, { config }] of Object.entries(published)) {
+      if (config.demo) continue;
+      const item = document.createElement('li');
+      const select = document.createElement('button');
+      select.type = 'button';
+      select.className = 'secondary';
+      select.textContent = config.name || config.headline || slug;
+      select.addEventListener('click', () => {
+        openPublished(slug);
+        $('relay-name').focus();
+      });
+      item.append(select);
+      list.append(item);
+    }
+    $('published-relays').hidden = !list.childElementCount;
+  }
+
+  const editSlug = query.get('edit');
+  if (editSlug && Object.hasOwn(published, editSlug) && !published[editSlug].config.demo) openPublished(editSlug);
+  else fill(prefill, query.get('slug') ?? '');
   renderSaved();
+  renderPublished();
   $('qr-destination').addEventListener('change', showDestination);
   $('vanity-slug').addEventListener('input', showDestination);
   $('new-relay').addEventListener('click', () => {
     editing = undefined;
+    openedSlug = undefined;
+    draft = undefined;
     fill(settings({}));
     status.textContent = '';
     $('results').hidden = true;
     $('relay').focus();
+  });
+  form.addEventListener('input', () => {
+    if (!draft) return;
+    draft = undefined;
+    showPublisher();
+    $('results').hidden = true;
+    status.textContent = 'Save your changes to create updated links.';
+  });
+
+  publisherForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = event.submitter;
+    button.disabled = true;
+    const key = $('publisher-key').value;
+    $('publisher-key').value = '';
+    try {
+      session = { enabled: true, ...await postJson('/api/publisher', { key }) };
+      publisherStatus.textContent = 'Signed in. Review your changes before publishing.';
+      showPublisher();
+      if (!$('publish-relay').disabled) $('publish-relay').focus();
+      else $('publisher-sign-out').focus();
+    } catch (error) {
+      publisherStatus.textContent = error.message;
+      $('publisher-key').focus();
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $('publisher-sign-out').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      session = { enabled: true, ...await postJson('/api/publisher', { signOut: true }) };
+      publisherStatus.textContent = 'Signed out.';
+      showPublisher();
+      $('publisher-key').focus();
+    } catch (error) {
+      publisherStatus.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $('publish-relay').addEventListener('click', async () => {
+    if (!draft || busy || draft.conflict || draft.isPublished) return;
+    const pending = draft;
+    const { slug, config, revision } = pending;
+    busy = true;
+    showPublisher();
+    publisherStatus.textContent = 'Publishing…';
+    try {
+      const record = await postJson('/api/published-relays', { slug, config, revision });
+      published[slug] = record;
+      renderPublished();
+      if (draft === pending) {
+        openedSlug = slug;
+        showLinks(record.config, slug);
+        publisherStatus.textContent = 'Published. Phones and screens can open this short URL.';
+        $('generated').querySelector('a').focus();
+      }
+    } catch (error) {
+      if (error.status === 401) session.signedIn = false;
+      publisherStatus.textContent = error.message;
+    } finally {
+      busy = false;
+      showPublisher();
+    }
   });
 
   form.addEventListener('submit', async event => {
@@ -224,6 +358,7 @@ function showSetup(prefill, published, initialMessage = '') {
         editing = recordKey;
         renderSaved();
       }
+      publisherStatus.textContent = '';
       showLinks(config, slug);
       status.textContent = stored ? 'Screen links are ready. Relay saved in this browser.' : 'Screen links are ready. Copy the setup link to save your settings.';
       $('generated').querySelector('a').focus();
@@ -305,8 +440,8 @@ async function showScreen(config, view, slug) {
   const publicJoin = screenInvitation(base, config, slug);
   document.body.classList.add(view);
   $('display').hidden = false;
-  const setup = appUrl(base, config);
-  if (slug) setup.searchParams.set('slug', slug);
+  const setup = appUrl(base, slug ? {} : config);
+  if (slug && !demo) setup.searchParams.set('edit', slug);
   $('edit-link').href = setup;
   $('switch-view').href = appUrl(base, config, view === 'side' ? 'led' : 'side', slug);
   $('switch-view').textContent = view === 'side' ? 'Rear LED' : 'Side screen';
@@ -443,10 +578,13 @@ async function showScreen(config, view, slug) {
 
 const view = query.get('view') || (vanityPath ? 'join' : '');
 const slug = vanityPath?.[1];
-const published = vanityPath || !allowedViews.includes(view) ? await publishedRelays() : {};
-const config = slug ? published[slug] : settings(Object.fromEntries(query));
+const setupView = !vanityPath && !allowedViews.includes(view);
+const [published, session] = await Promise.all([
+  vanityPath || setupView ? publishedRelays(slug) : {},
+  setupView ? fetchJson('/api/publisher').catch(() => ({})) : {},
+]);
+const config = slug && Object.hasOwn(published, slug) ? settings(published[slug].config) : settings(Object.fromEntries(query));
 
-$('setup').hidden = true;
 if (slug && (!Object.hasOwn(published, slug) || !allowedViews.includes(view))) {
   $('overview').classList.add('overview-error');
   const heading = document.createElement('h1');
@@ -457,5 +595,5 @@ if (slug && (!Object.hasOwn(published, slug) || !allowedViews.includes(view))) {
   if (view === 'join') showOverview(config);
   else showScreen(config, view, slug);
 } else {
-  showSetup(config, published, view ? 'This relay link is incomplete. Connect your relay to create a new one.' : '');
+  showSetup(config, published, session, view ? 'This relay link is incomplete. Connect your relay to create a new one.' : '');
 }
