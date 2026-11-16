@@ -1,5 +1,5 @@
 import QRCode from 'qrcode';
-import { origin, readRelayUrl, relayParts, getRelay, progress } from './relay.mjs';
+import { origin, readRelayUrl, relayParts, getRelay, getGlobalLap, progress } from './relay.mjs';
 import { drawMap, loadMap } from './map.mjs';
 import { appUrl, inviteUrl, prayerUrl, screenInvitation, settings, slugPattern, suggestSlug, usableRelay } from './settings.mjs';
 
@@ -513,11 +513,27 @@ function relayKeyUrl(key) {
   return /^[0-9a-f]{6}$/.test(key) ? `${origin}/prayer_app/custom/${key}/display` : '';
 }
 
+function relayReader(config) {
+  if (config.demo === 'live') {
+    return async () => {
+      const { key, id } = await fetchJson('/api/relay?source=global');
+      return getGlobalLap(relayParts(key, id, 'global'));
+    };
+  }
+  const parts = relayParts(config.relay, config.id);
+  return () => getRelay(parts);
+}
+
+function liveStatus(snapshot, message) {
+  return ['Prayer.Global', snapshot && 'Lap ' + snapshot.lap, message].filter(Boolean).join(' · ');
+}
+
 function showOverview(config, record) {
   const demo = config.demo === '1';
+  const global = config.demo === 'live';
   $('overview').hidden = false;
   applyAccent(config.accent);
-  $('overview-org').textContent = config.org || 'Prayer Relay';
+  $('overview-org').textContent = global ? 'Global prayer relay' : config.org || 'Prayer Relay';
   $('overview-headline').textContent = config.headline || 'Pray for the world';
   $('overview-intro').textContent = config.intro || 'Take a minute to pray for a place in the world.';
   if (record?.archivedAt) {
@@ -547,19 +563,21 @@ function showOverview(config, record) {
     return;
   }
 
-  const parts = relayParts(config.relay, config.id);
+  const read = relayReader(config);
   const status = $('overview-status');
-  let hasData = false;
-  status.textContent = 'Connecting';
+  let state;
+  const connecting = global ? liveStatus(null, 'Connecting') : 'Connecting';
+  status.textContent = connecting;
+  if (global) $('overview-progress-title').textContent = 'Current lap progress';
   async function refresh() {
     try {
-      const state = await getRelay(parts);
-      $('overview-coverage').textContent = (progress(state) / 10).toFixed(1) + '%';
+      state = await read();
+      $('overview-coverage').textContent = (progress(state, !global) / 10).toFixed(1) + '%';
       $('overview-participants').textContent = state.participants?.toLocaleString() ?? '—';
-      hasData = true;
-      status.textContent = 'Live relay';
+      status.textContent = global ? liveStatus(state, 'Live') : 'Live relay';
     } catch {
-      status.textContent = hasData ? 'Updates delayed' : 'Progress unavailable';
+      const message = state ? 'Updates delayed' : 'Progress unavailable';
+      status.textContent = global ? liveStatus(state, message) : message;
     }
     setTimeout(refresh, 30000);
   }
@@ -592,20 +610,23 @@ function counter(element, format) {
 
 async function showScreen(config, view, slug) {
   const demo = config.demo === '1';
-  const parts = demo ? null : relayParts(config.relay, config.id);
+  const global = config.demo === 'live';
+  const read = demo ? null : relayReader(config);
   const publicJoin = screenInvitation(base, config, slug);
   document.body.classList.add(view);
+  if (global) document.body.classList.add('global-demo');
   $('display').hidden = false;
-  const setup = appUrl(base, slug ? {} : config);
+  const setup = appUrl(base, slug || global ? {} : config);
   if (slug && !demo) setup.searchParams.set('edit', slug);
   $('edit-link').href = setup;
   $('switch-view').href = appUrl(base, config, view === 'side' ? 'led' : 'side', slug);
   $('switch-view').textContent = view === 'side' ? 'Rear LED' : 'Side screen';
-  $('screen-org').textContent = config.org || 'Prayer Relay';
+  $('screen-org').textContent = global ? 'Global prayer relay' : config.org || 'Prayer Relay';
   $('screen-headline').textContent = config.headline || 'Pray for the world';
   applyAccent(config.accent);
   const status = $('connection');
-  status.textContent = demo ? 'Demo data' : 'Connecting';
+  status.textContent = global ? liveStatus(null, 'Connecting') : demo ? 'Demo data' : 'Connecting';
+  if (global) $('coverage-label').textContent = 'Current lap coverage';
   if (view === 'side') {
     $('join-link').href = $('qr-link').href = publicJoin;
     const link = new URL(publicJoin);
@@ -628,7 +649,7 @@ async function showScreen(config, view, slug) {
 
   function paint(snapshot, previous) {
     for (const [id, elements] of paths) {
-      const covered = snapshot.lap > 1 || snapshot.grid[id] > 0;
+      const covered = (!global && snapshot.lap > 1) || snapshot.grid[id] > 0;
       const recent = previous && snapshot.grid[id] > (previous.lap === snapshot.lap ? (previous.grid[id] ?? 0) : 0);
       for (const element of elements) {
         element.classList.toggle('covered', covered);
@@ -662,11 +683,11 @@ async function showScreen(config, view, slug) {
   }
 
   function show(snapshot, animate) {
-    const next = progress(snapshot);
+    const next = progress(snapshot, !global);
     percent(next, animate);
     participants(snapshot.participants, animate);
     minutes(snapshot.minutes, animate);
-    if (animate && progress(state) < 1000 && next >= 1000) celebrate(false);
+    if (animate && progress(state, !global) < 1000 && next >= 1000) celebrate(false);
     paint(snapshot, animate ? state : null);
     state = snapshot;
   }
@@ -698,13 +719,15 @@ async function showScreen(config, view, slug) {
 
   async function poll() {
     try {
-      const next = await getRelay(parts);
-      const sameOrHigher = !state || progress(next) >= progress(state);
-      show(next, live && sameOrHigher);
-      status.textContent = 'Live relay';
+      const next = await read();
+      const sameOrHigher = !state || progress(next, !global) >= progress(state, !global);
+      const sameLap = !state || state.lap === next.lap;
+      show(next, live && sameOrHigher && (!global || sameLap));
+      status.textContent = global ? liveStatus(next, 'Live') : 'Live relay';
       live = true;
     } catch {
-      status.textContent = state ? 'Updates delayed' : 'Waiting for relay data';
+      const message = state ? 'Updates delayed' : 'Waiting for relay data';
+      status.textContent = global ? liveStatus(state, message) : message;
       live = false;
     }
     setTimeout(poll, live ? 10000 : 20000);

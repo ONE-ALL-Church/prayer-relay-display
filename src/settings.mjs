@@ -39,12 +39,12 @@ export function settings(source) {
     accent: accentPattern.test(source.accent ?? '') ? source.accent : defaultAccent,
     qr: ['overview', 'vanity'].includes(source.qr) ? source.qr : 'direct',
   };
-  if (source.demo === '1') value.demo = '1';
+  if (source.demo === '1' || source.demo === 'live') value.demo = source.demo;
   return value;
 }
 
 export function prayerUrl(config) {
-  if (config.demo === '1') return origin;
+  if (config.demo) return origin;
   const parts = relayParts(config.relay, config.id);
   return config.invite ? inviteUrl(config.invite) : `${origin}/prayer_app/custom/${parts.public_key}/map`;
 }
@@ -70,7 +70,6 @@ export function screenInvitation(base, config, slug) {
 }
 
 export function usableRelay(config) {
-  if (config.demo === '1') return true;
   try {
     prayerUrl(config);
     return true;
