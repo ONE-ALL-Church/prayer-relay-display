@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
-import { getRelay, parseRelayPage, progress, readRelayUrl, relayParts, snapshot } from '../src/relay.mjs';
+import { getGlobalLap, getRelay, parseRelayPage, progress, readRelayUrl, relayParts, snapshot } from '../src/relay.mjs';
 
 const key = 'abcd12';
 const parts = relayParts(key, '123');
@@ -57,4 +57,39 @@ test('the display requests only get_grid from the fixed relay endpoint', async (
     assert.deepEqual(JSON.parse(options.body), { action: 'get_grid', parts });
     return Response.json(result([], 0));
   });
+});
+
+
+test('global display requests the current lap grid and resets coverage across laps', async () => {
+  const parts = relayParts('abcdef', '2128', 'global');
+  for (const [lap, count, expected] of [[69, 2, 200], [70, 1, 100]]) {
+    const stats = { key: 'abcdef', post_id: 2128, completed_int: count,
+      remaining_int: 10 - count, lap_number: lap, timestamp: Date.now() / 1000 };
+    const data = count === 2 ? { 100000001: 1, 100000002: 1 } : { 100000003: 1 };
+    const calls = [];
+    const state = await getGlobalLap(parts, async (url, options) => {
+      assert.equal(url, 'https://prayer.global/wp-json/prayer_app/v1/global/map');
+      assert.equal(options.credentials, 'omit');
+      const body = JSON.parse(options.body);
+      calls.push(body);
+      return Response.json(body.action === 'get_stats' ? stats : { grid_data: { data } });
+    });
+    assert.deepEqual(calls, [
+      { action: 'get_stats', parts },
+      { action: 'get_grid', parts, data: { lap_number: lap } },
+    ]);
+    assert.equal(state.lap, lap);
+    assert.deepEqual(state.grid, data);
+    assert.equal(progress(state, false), expected);
+  }
+});
+
+test('global display rejects a grid that is inconsistent with its lap totals', async () => {
+  const parts = relayParts('abcdef', '2128', 'global');
+  await assert.rejects(getGlobalLap(parts, async (_, options) => {
+    const { action } = JSON.parse(options.body);
+    return Response.json(action === 'get_stats'
+      ? { key: 'abcdef', post_id: 2128, completed_int: 2, remaining_int: 8, lap_number: 69, timestamp: Date.now() / 1000 }
+      : { grid_data: { data: { 100000001: 1 } } });
+  }), /consistent prayer data/);
 });

@@ -176,3 +176,13 @@ select, textarea {
 #download-relay-qr { text-decoration: none; }
 
 #results { margin: 0 0 1.2rem; }
+
+.live-demo { border-top: 1px solid var(--line); margin-top: 1rem; padding-top: .85rem; }
+.live-demo summary { cursor: pointer; font-weight: 650; }
+.live-demo .link-row { margin-top: .8rem; }
+.global-demo.led .display { grid-template-rows: auto auto minmax(0, 1fr); }
+.global-demo.led .screen-header { position: static; justify-content: center; padding-bottom: clamp(.6rem, 1.8vh, 1.5rem); }
+.global-demo.led #connection { font-size: clamp(.7rem, 1.7vh, 1.3rem); }
+.global-demo.led .coverage { grid-row: 2; }
+.global-demo.led .map-panel { grid-row: 3; }
+.global-demo.led #world { max-height: 68svh; }

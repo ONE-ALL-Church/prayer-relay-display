@@ -6,6 +6,8 @@ Give a public Prayer.Global relay a live map for your auditorium. The side scree
 
 [Try the side screen](https://prayer-relay-display.oneandall.workers.dev/?view=side&demo=1) · [Try the rear LED](https://prayer-relay-display.oneandall.workers.dev/?view=led&demo=1) · [Try the participant overview](https://prayer-relay-display.oneandall.workers.dev/r/demo)
 
+Choose **Watch live global relay** on the setup page to follow Prayer.Global’s [current lap](https://prayer.global/newest/map). The side screen, rear LED, and overview show the current lap number and its coverage. The sample demo remains the default for rehearsals.
+
 ## Put it on your screens
 
 1. Create a public custom relay in [Prayer.Global](https://prayer.global/). Copy its public map or display link.
@@ -35,7 +37,7 @@ Open setup on the hostname you want to use on the screen. The short links use th
 
 For a preview, open `/r/demo` for the overview or `/r/demo?view=side` to see the short address and QR code on a screen.
 
-Use the demo links to rehearse without a relay. Demo screens show **Demo data**. The **Preview 100%** button works on either layout and leaves live data alone. The live celebration plays when the first lap crosses 100% during an active connection. The number can continue past 100% if the relay starts another lap.
+Use the demo links to rehearse without a relay. Demo screens show **Demo data**. The **Preview 100%** button works on either layout and leaves live data alone. For a custom relay, the live celebration plays when the first lap crosses 100% during an active connection. Its total can continue past 100%. The global view shows current lap coverage and resets when Prayer.Global starts a new lap.
 
 ## Hosting and data
 

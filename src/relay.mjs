@@ -11,25 +11,25 @@ export function readRelayUrl(value) {
   return match[1];
 }
 
-export function relayParts(key, id) {
+export function relayParts(key, id, mode = 'custom') {
   if (!relayKey.test(key) || !postId.test(id)) throw new Error('Invalid relay.');
   return {
     root: 'prayer_app',
-    type: 'custom',
-    meta_key: 'prayer_app_custom_magic_key',
+    type: mode,
+    meta_key: `prayer_app_${mode}_magic_key`,
     public_key: key,
-    action: 'display',
+    action: mode === 'global' ? 'map' : 'display',
     post_id: String(id),
     post_type: 'pg_relays',
     instance_id: '',
   };
 }
 
-export function parseRelayPage(html, key) {
+export function parseRelayPage(html, key, mode = 'custom') {
   const metadata = html.match(/\blet jsObject\s*=\s*\[(\{"parts"\s*:\s*\{[^{}]*\})\s*,/);
   if (!metadata) throw new Error('Prayer.Global did not provide relay details.');
   const { parts } = JSON.parse(metadata[1] + '}');
-  const expected = relayParts(key, parts.post_id);
+  const expected = relayParts(key, parts.post_id, mode);
   if (Object.keys(expected).some(field => String(parts[field]) !== expected[field])) {
     throw new Error('Prayer.Global returned details for a different relay.');
   }
@@ -62,20 +62,36 @@ export function snapshot(result, parts, now = Date.now()) {
   };
 }
 
-export function progress({ lap, covered, total }) {
+export function progress({ lap, covered, total }, cumulative = true) {
   const current = Math.round(covered / total * 1000);
-  return (lap - 1) * 1000 + Math.min(current, covered < total ? 999 : 1000);
+  const completed = cumulative ? (lap - 1) * 1000 : 0;
+  return completed + Math.min(current, covered < total ? 999 : 1000);
 }
 
-export async function getRelay(parts, fetcher = fetch) {
-  const response = await fetcher(origin + '/wp-json/prayer_app/v1/custom/display', {
+async function requestRelay(parts, action, data, fetcher) {
+  const path = parts.type === 'global' ? 'global/map' : 'custom/display';
+  const response = await fetcher(origin + '/wp-json/prayer_app/v1/' + path, {
     method: 'POST',
     credentials: 'omit',
     redirect: 'manual',
     headers: { 'content-type': 'application/json' },
     signal: AbortSignal.timeout(12000),
-    body: JSON.stringify({ action: 'get_grid', parts }),
+    body: JSON.stringify({ action, parts, data }),
   });
   if (!response.ok) throw new Error('Prayer.Global could not load this relay.');
-  return snapshot(await response.json(), parts);
+  return response.json();
+}
+
+export async function getRelay(parts, fetcher = fetch) {
+  return snapshot(await requestRelay(parts, 'get_grid', undefined, fetcher), parts);
+}
+
+export async function getGlobalLap(parts, fetcher = fetch) {
+  const stats = await requestRelay(parts, 'get_stats', undefined, fetcher);
+  if (stats?.key !== parts.public_key || String(stats.post_id) !== parts.post_id ||
+      !Number.isSafeInteger(stats.lap_number) || stats.lap_number < 1) {
+    throw new Error('Prayer.Global returned a different relay or an invalid lap.');
+  }
+  const { grid_data } = await requestRelay(parts, 'get_grid', { lap_number: stats.lap_number }, fetcher);
+  return snapshot({ stats, grid_data }, parts);
 }

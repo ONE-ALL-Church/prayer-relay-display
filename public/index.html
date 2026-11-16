@@ -112,8 +112,16 @@
         <div class="demo-card">
           <img src="/demo-preview.svg" alt="" width="679" height="310">
           <h2>See it in action</h2>
-          <p>Try both layouts and the participant overview with sample data.</p>
+          <p><strong>Sample demo</strong></p>
           <div class="link-row"><a href="/?view=side&amp;demo=1">Side screen ↗</a><a href="/?view=led&amp;demo=1">Rear LED ↗</a><a href="/r/demo">Overview ↗</a></div>
+          <details class="live-demo">
+            <summary>Watch live global relay</summary>
+            <div class="link-row">
+              <a href="/?view=side&amp;demo=live">Live side screen ↗</a>
+              <a href="/?view=led&amp;demo=live">Live rear LED ↗</a>
+              <a href="/?view=join&amp;demo=live">Live overview ↗</a>
+            </div>
+          </details>
         </div>
       </aside>
     </div>
@@ -128,7 +136,7 @@
     </div>
     <section class="coverage" aria-label="Prayer relay coverage">
       <strong class="metric"><span id="percent">—</span><span class="unit">%</span></strong>
-      <span class="metric-label">Relay coverage</span>
+      <span class="metric-label" id="coverage-label">Relay coverage</span>
     </section>
     <section class="details" aria-label="Participation">
       <div class="stat"><strong id="participants">—</strong><span>Participants</span></div>
