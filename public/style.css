@@ -153,6 +153,7 @@ select, textarea {
 .overview h1 { font-size: clamp(3rem, 10vw, 5.75rem); line-height: .95; letter-spacing: -.065em; margin: 0; overflow-wrap: anywhere; }
 #overview-intro { color: var(--muted); margin: 1.2rem 0 1.75rem; font-size: 1.075rem; line-height: 1.5; max-width: 30ch; overflow-wrap: anywhere; }
 #start-praying { display: flex; justify-content: space-between; gap: 1rem; text-decoration: none; padding: 1rem 1.15rem; max-width: 21rem; min-height: 3.125rem; align-items: center; }
+#start-praying:hover { color: var(--accent-text, #151811); text-decoration: underline; }
 .overview-progress { padding: 1.3rem 1.15rem; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
 .overview-progress-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .45rem 1rem; align-items: center; }
 .overview-progress h2 { margin: 0; font-size: 1rem; }
