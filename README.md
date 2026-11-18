@@ -17,17 +17,21 @@ Choose **Watch live global relay** on the setup page to follow Prayer.Global’s
 5. Open each link on its intended display. Move the pointer to find **Full screen** and **Preview 100%**.
 6. Scan the side-screen QR code with a phone before service. Confirm it opens the correct relay.
 
-Name each relay to find it in **Saved relays**. Each relay has its own organization name, headline, accent color, optional introduction, and public HTTPS prayer link. Save more than one relay, then open each relay from the list to edit or copy its links. Saved relays are stored in this browser. A setup link can open the same settings on another device.
+Use the event name to identify the relay in **Saved relays**, on the participant overview, and on the recap. Each relay has its own organization name, headline, accent color, optional introduction, and public HTTPS prayer link. Save more than one relay, then open each relay from the list to edit or copy its links. Saved relays are stored in this browser. A setup link can open the same settings on another device.
 
 ### Choose where the QR code goes
 
 - **Open the prayer link** takes participants straight to Prayer.Global or to the custom link you enter.
 - **Open a branded overview** shows your organization name, introduction, and current coverage. Choose **Start praying** to open the configured prayer link.
-- **Open a branded overview at a short URL** puts a short address on the screen and in its QR code, such as `prayer-relay-display.example.workers.dev/r/outreach`.
+- **Open a branded overview at a short URL** uses your published relay address, such as `prayer.example.org/r/outreach`.
 
-If browser publishing is enabled, select **New relay**, paste a Prayer.Global link, and enter an optional relay name. Setup suggests a short URL. Open **Customize** to edit the URL or change the branding. Select **Preview relay**, sign in with the deployment’s publishing key, and select **Publish relay**.
+If you already have a short address, enter it in **Side-screen short URL**. The screen and QR code use that address. Set its redirect to the page you want participants to open. The share panel still gives you the published overview link and its QR code. Check the side-screen preview for an address that may be too long to fit on one line.
 
-The share panel gives you a public link, a print-ready SVG QR code, and **Copy production links**. To update a relay, open it from **Published relays**, preview your changes, and select **Update published relay**. The same short URL and QR code open the new settings on reload.
+Choose an accent color in **Customize**. The display uses gold for text and focus indicators when your color has too little contrast.
+
+If browser publishing is enabled, select **New relay**, paste a Prayer.Global link, and enter an optional relay name. Setup suggests a short URL. Open **Customize** to edit the URL or change the branding. Select **Preview relay** and check the three preview links. Get the publishing key from the person who deployed the site. Sign in and select **Publish relay**.
+
+The share panel gives you a public link, a print-ready SVG QR code, and **Copy production links**. To update a relay, open it from **Published relays**, preview your changes, and select **Update published relay**. The published short URL and its QR code open the new settings on reload.
 
 Select **Duplicate** to start a new relay with the same branding. Paste the new Prayer.Global link. Select **Archive relay** when an event ends. The same short URL opens a recap with the totals available at the time of archiving. Find the relay under **Archived relays** to share its recap or restore it. Share your publishing key only with organizers who can edit all relays on the deployment.
 
@@ -37,7 +41,7 @@ Open setup on the hostname you want to use on the screen. The short links use th
 
 For a preview, open `/r/demo` for the overview or `/r/demo?view=side` to see the short address and QR code on a screen.
 
-Use the demo links to rehearse without a relay. Demo screens show **Demo data**. The **Preview 100%** button works on either layout and leaves live data alone. For a custom relay, the live celebration plays when the first lap crosses 100% during an active connection. Its total can continue past 100%. The global view shows current lap coverage and resets when Prayer.Global starts a new lap.
+Use the demo links to rehearse without a relay. All three sample views start with the same totals. Open **Display controls** on either screen to replay a sample update or preview the 100% celebration. Moving the pointer, tapping, or pressing Tab brings the controls back after they fade. For a custom relay, the live celebration plays when the first lap crosses 100% during an active connection. Its total can continue past 100%. The global view shows current lap coverage and resets when Prayer.Global starts a new lap.
 
 ## Hosting and data
 

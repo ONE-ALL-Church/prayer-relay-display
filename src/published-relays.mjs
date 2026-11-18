@@ -95,7 +95,7 @@ export async function publishedRelays(request, url, env, lookupRelayId) {
   }
   if (action !== 'publish') return response({ error: 'Invalid publishing action.' }, 400);
   const config = settings(submitted ?? {});
-  if (config.demo || !relayKey.test(config.relay) || config.qr !== 'vanity' || config.invite.length > 240) {
+  if (config.demo || !relayKey.test(config.relay) || config.qr !== 'vanity' || config.invite.length > 240 || config.screenUrl.length > 240) {
     return response({ error: 'Choose a public Prayer.Global relay and a short URL for its overview.' }, 400);
   }
   const bundled = await env.ASSETS.fetch(new Request(new URL('/relays.json', url)));
@@ -109,7 +109,7 @@ export async function publishedRelays(request, url, env, lookupRelayId) {
   } catch {
     return response({ error: 'Prayer.Global could not verify the relay. Try again before publishing.' }, 502);
   }
-  if (!usableRelay(config)) return response({ error: 'Enter a valid public HTTPS prayer link.' }, 400);
+  if (!usableRelay(config)) return response({ error: 'Use public HTTPS addresses for the prayer link and side-screen URL.' }, 400);
 
   const record = JSON.stringify(config);
   const result = revision === null

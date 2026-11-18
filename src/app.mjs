@@ -1,7 +1,8 @@
 import QRCode from 'qrcode';
 import { origin, readRelayUrl, relayParts, getRelay, getGlobalLap, progress } from './relay.mjs';
 import { drawMap, loadMap } from './map.mjs';
-import { appUrl, inviteUrl, prayerUrl, screenInvitation, settings, slugPattern, suggestSlug, usableRelay } from './settings.mjs';
+import { sampleGrid, sampleSnapshot } from './sample.mjs';
+import { appUrl, defaultAccent, inviteUrl, prayerUrl, screenInvitation, settings, slugPattern, suggestSlug, usableRelay } from './settings.mjs';
 
 const $ = id => document.getElementById(id);
 const currentUrl = new URL(location.href);
@@ -66,14 +67,59 @@ function storeRelays(records) {
   }
 }
 
-function applyAccent(color) {
+function luminance(color) {
   const channels = color.slice(1).match(/../g).map(hex => {
     const channel = Number.parseInt(hex, 16) / 255;
     return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
   });
-  const luminance = .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
-  document.documentElement.style.setProperty('--accent', color);
-  document.documentElement.style.setProperty('--accent-text', luminance > .179 ? '#000' : '#fff');
+  return .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+}
+
+function applyAccent(color) {
+  const light = luminance(color);
+  const style = document.documentElement.style;
+  style.setProperty('--accent', color);
+  style.setProperty('--accent-text', light > .179 ? '#000' : '#fff');
+  // Keep text and focus indicators legible even on the lighter cards.
+  const contrast = (light + .05) / (luminance('#1b2621') + .05);
+  style.setProperty('--accent-readable', contrast >= 4.5 ? color : defaultAccent);
+  style.setProperty('--accent-border', contrast >= 3 ? 'transparent' : '#a9b4b0');
+}
+
+function displayAddress(url) {
+  const address = new URL(url);
+  return address.pathname === '/' && !address.search && !address.hash
+    ? address.host
+    : address.href.slice('https://'.length);
+}
+
+function showScreenAddress(url) {
+  const link = $('join-link');
+  const address = new URL(url);
+  const overview = address.origin === base && address.searchParams.get('view') === 'join';
+  const label = overview ? 'Open relay overview' : displayAddress(url);
+  const fit = () => {
+    link.textContent = label;
+    const wraps = link.scrollWidth > link.clientWidth;
+    if (wraps) link.textContent = 'Scan to join';
+    $('display-url-warning').hidden = !wraps;
+  };
+  fit();
+  new ResizeObserver(fit).observe(link.parentElement);
+}
+
+function addressWarning(config, slug) {
+  if (!config.screenUrl && config.qr !== 'direct' && !slug) {
+    return 'The preview QR opens the overview. Publish a short URL or enter a side-screen short URL to show an address people can type.';
+  }
+  const url = screenInvitation(base, config, slug);
+  const text = document.createElement('canvas').getContext('2d');
+  if (!text) return '';
+  // Match the side-screen address at the reference 1920 × 1080 layout.
+  text.font = '650 22px ' + getComputedStyle(document.documentElement).fontFamily;
+  return text.measureText(displayAddress(url)).width > 416
+    ? 'This address may not fit on one line. Enter a shorter side-screen URL in Customize.'
+    : '';
 }
 
 function addResult(name, url) {
@@ -138,11 +184,11 @@ function showSetup(prefill, published, session, initialMessage = '') {
     const choice = $('qr-destination').value;
     $('overview-settings').hidden = choice === 'direct';
     $('vanity-settings').hidden = choice !== 'vanity';
-    $('vanity-slug').required = choice === 'vanity';
-    $('vanity-slug').disabled = choice !== 'vanity';
+    let key = '';
+    try { key = readRelayUrl(relayInput.value); } catch { /* Validate the relay field on submit. */ }
+    slugInput.required = choice === 'vanity' && Boolean(key);
+    slugInput.disabled = choice !== 'vanity' || !key;
     if (choice === 'vanity' && !customSlug) {
-      let key = '';
-      try { key = readRelayUrl(relayInput.value); } catch { /* Keep the suggestion based on the name. */ }
       slugInput.value = nameInput.value.trim() || key ? suggestSlug(nameInput.value, key, published) : '';
     }
     const slug = slugInput.value;
@@ -155,7 +201,7 @@ function showSetup(prefill, published, session, initialMessage = '') {
     customSlug = Boolean(slug);
     $('relay').value = relayKeyUrl(config.relay);
     const fields = { 'relay-name': config.name, org: config.org, headline: config.headline, invite: config.invite,
-      'intro-copy': config.intro, accent: config.accent, 'qr-destination': config.qr, 'vanity-slug': slug };
+      'intro-copy': config.intro, 'screen-url': config.screenUrl, accent: config.accent, 'qr-destination': config.qr, 'vanity-slug': slug };
     for (const [field, value] of Object.entries(fields)) $(field).value = value;
     showDestination();
   }
@@ -215,7 +261,16 @@ function showSetup(prefill, published, session, initialMessage = '') {
     const linkedConfig = !isPublished && config.qr === 'vanity' ? { ...config, qr: 'overview' } : config;
     $('generated').replaceChildren();
     $('copy-status').textContent = '';
-    $('results-title').textContent = archived ? 'Share the recap' : isPublished ? 'Share this relay' : 'Preview and share';
+    $('results-title').textContent = archived ? 'Share the recap' : isPublished ? 'Share this relay'
+      : session.enabled && config.qr === 'vanity' ? 'Preview your relay' : 'Your relay links';
+    $('results-guide').textContent = archived ? 'Share the recap with the same link or QR code.'
+      : isPublished ? 'Share the public link with participants and the production links with the booth.'
+      : session.enabled && config.qr === 'vanity' ? 'Open a preview to check your map, branding, and QR code before you publish.'
+      : 'Open the screen links on your production computers. Keep the setup link to edit this relay.';
+    $('screen-links-title').textContent = archived ? 'Recap and setup links' : isPublished ? 'Production and setup links' : 'Preview links';
+    const warning = archived ? '' : addressWarning(config, slug);
+    $('side-url-warning').textContent = warning;
+    $('side-url-warning').hidden = !warning;
     $('share-relay').hidden = true;
     if (isPublished) showSharePanel(slug, archived);
     if (!archived) {
@@ -253,6 +308,8 @@ function showSetup(prefill, published, session, initialMessage = '') {
     for (const [key, record] of Object.entries(records)) {
       const config = settings(record?.config || {});
       if (!usableRelay(config) || config.demo) continue;
+      const publishedConfig = published[record.slug]?.config;
+      if (publishedConfig && JSON.stringify(settings(publishedConfig)) === JSON.stringify(config)) continue;
       const item = document.createElement('li');
       const select = document.createElement('button');
       select.type = 'button';
@@ -359,6 +416,10 @@ function showSetup(prefill, published, session, initialMessage = '') {
   renderPublished();
   $('qr-destination').addEventListener('change', showDestination);
   for (const field of [relayInput, nameInput]) field.addEventListener('input', showDestination);
+  relayInput.addEventListener('input', () => {
+    if (relayInput.hasAttribute('aria-invalid')) status.textContent = '';
+    relayInput.removeAttribute('aria-invalid');
+  });
   slugInput.addEventListener('input', () => {
     customSlug = Boolean(slugInput.value);
     showDestination();
@@ -377,7 +438,7 @@ function showSetup(prefill, published, session, initialMessage = '') {
     draft = undefined;
     showPublisher();
     $('results').hidden = true;
-    status.textContent = 'Save your changes to create updated links.';
+    status.textContent = 'Preview your changes to create updated links.';
   });
 
   publisherForm.addEventListener('submit', async event => {
@@ -427,12 +488,13 @@ function showSetup(prefill, published, session, initialMessage = '') {
       const record = await postJson('/api/published-relays', { slug, config, revision });
       published[slug] = record;
       renderPublished();
+      renderSaved();
       if (draft === pending) {
         openedSlug = slug;
         fill(record.config, slug);
         showLinks(record.config, slug);
         publisherStatus.textContent = 'Published. Phones and screens can open this short URL.';
-        $('generated').querySelector('a').focus();
+        $('results-title').focus();
       }
     } catch (error) {
       if (error.status === 401) session.signedIn = false;
@@ -470,17 +532,36 @@ function showSetup(prefill, published, session, initialMessage = '') {
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
+    let key;
+    try {
+      key = readRelayUrl(relayInput.value);
+    } catch {
+      relayInput.setAttribute('aria-invalid', 'true');
+      status.textContent = 'Paste the public map or display link from your custom Prayer.Global relay.';
+      relayInput.focus();
+      return;
+    }
     const button = event.submitter;
     button.disabled = true;
     const request = ++previewRequest;
     status.textContent = 'Checking the relay…';
     try {
-      const key = readRelayUrl(relayInput.value);
       const invite = $('invite').value.trim() ? inviteUrl($('invite').value) : '';
+      let screenUrl = '';
+      if ($('screen-url').value.trim()) {
+        try {
+          screenUrl = inviteUrl($('screen-url').value);
+        } catch {
+          customize.open = true;
+          $('screen-url').focus();
+          status.textContent = 'Enter a public HTTPS address for the side screen.';
+          return;
+        }
+      }
       const qr = $('qr-destination').value;
       const slug = qr === 'vanity' ? slugInput.value : '';
       const values = { relay: key, name: nameInput.value, org: $('org').value,
-        headline: $('headline').value, invite, intro: $('intro-copy').value, accent: $('accent').value, qr };
+        headline: $('headline').value, invite, screenUrl, intro: $('intro-copy').value, accent: $('accent').value, qr };
       const result = await fetchJson('/api/relay?' + new URLSearchParams({ key }));
       await getRelay(relayParts(key, result.id));
       if (request !== previewRequest) return;
@@ -496,9 +577,7 @@ function showSetup(prefill, published, session, initialMessage = '') {
       publisherStatus.textContent = '';
       showLinks(config, slug);
       status.textContent = stored ? 'Screen links are ready. Relay saved in this browser.' : 'Screen links are ready. Copy the setup link to save your settings.';
-      if (session.enabled && draft.config.qr === 'vanity' && !draft.conflict && !draft.isPublished) {
-        (session.signedIn ? $('publish-relay') : $('publisher-key')).focus();
-      } else $('generated').querySelector('a').focus();
+      $('results-title').focus();
     } catch (error) {
       if (request !== previewRequest) return;
       status.textContent = error instanceof TypeError || error.name === 'TimeoutError'
@@ -524,8 +603,8 @@ function relayReader(config) {
   return () => getRelay(parts);
 }
 
-function liveStatus(snapshot, message) {
-  return ['Prayer.Global', snapshot && 'Lap ' + snapshot.lap, message].filter(Boolean).join(' · ');
+function liveStatus(message) {
+  return 'Prayer.Global · ' + message;
 }
 
 function showOverview(config, record) {
@@ -534,6 +613,8 @@ function showOverview(config, record) {
   $('overview').hidden = false;
   applyAccent(config.accent);
   $('overview-org').textContent = global ? 'Global prayer relay' : config.org || 'Prayer Relay';
+  $('overview-event').textContent = config.name;
+  $('overview-event').hidden = !config.name || config.name === config.org;
   $('overview-headline').textContent = config.headline || 'Pray for the world';
   $('overview-intro').textContent = config.intro || 'Take a minute to pray for a place in the world.';
   if (record?.archivedAt) {
@@ -557,27 +638,35 @@ function showOverview(config, record) {
   $('start-praying').href = prayerUrl(config);
   if (demo) {
     $('start-praying').firstChild.textContent = 'Explore Prayer.Global ';
+    const sample = sampleSnapshot();
     $('overview-status').textContent = 'Demo data';
-    $('overview-coverage').textContent = '42.1%';
-    $('overview-participants').textContent = '312';
+    $('overview-coverage').textContent = (progress(sample) / 10).toFixed(1) + '%';
+    $('overview-participants').textContent = sample.participants.toLocaleString();
+    $('overview-minutes').textContent = sample.minutes.toLocaleString();
+    $('overview-minutes-stat').hidden = false;
     return;
   }
 
   const read = relayReader(config);
   const status = $('overview-status');
   let state;
-  const connecting = global ? liveStatus(null, 'Connecting') : 'Connecting';
-  status.textContent = connecting;
-  if (global) $('overview-progress-title').textContent = 'Current lap progress';
+  status.textContent = global ? liveStatus('Connecting') : 'Connecting';
+  if (global) {
+    $('overview-progress-title').textContent = 'Current lap progress';
+    $('start-praying').firstChild.textContent = 'Start praying at Prayer.Global ';
+  }
   async function refresh() {
     try {
       state = await read();
       $('overview-coverage').textContent = (progress(state, !global) / 10).toFixed(1) + '%';
       $('overview-participants').textContent = state.participants?.toLocaleString() ?? '—';
-      status.textContent = global ? liveStatus(state, 'Live') : 'Live relay';
+      $('overview-minutes').textContent = state.minutes?.toLocaleString() ?? '—';
+      $('overview-minutes-stat').hidden = state.minutes == null;
+      if (global) $('overview-progress-title').textContent = 'Lap ' + state.lap + ' progress';
+      status.textContent = global ? liveStatus('Live') : 'Live relay';
     } catch {
       const message = state ? 'Updates delayed' : 'Progress unavailable';
-      status.textContent = global ? liveStatus(state, message) : message;
+      status.textContent = global ? liveStatus(message) : message;
     }
     setTimeout(refresh, 30000);
   }
@@ -625,14 +714,11 @@ async function showScreen(config, view, slug) {
   $('screen-headline').textContent = config.headline || 'Pray for the world';
   applyAccent(config.accent);
   const status = $('connection');
-  status.textContent = global ? liveStatus(null, 'Connecting') : demo ? 'Demo data' : 'Connecting';
+  status.textContent = global ? liveStatus('Connecting') : demo ? 'Demo data' : 'Connecting';
   if (global) $('coverage-label').textContent = 'Current lap coverage';
   if (view === 'side') {
     $('join-link').href = $('qr-link').href = publicJoin;
-    const link = new URL(publicJoin);
-    const longOverview = link.origin === base && link.searchParams.get('view') === 'join';
-    $('join-link').textContent = longOverview ? 'Relay overview' : demo && !slug ? 'Explore Prayer.Global'
-      : publicJoin.replace(/^https:\/\//, '').replace(/\/$/, '');
+    showScreenAddress(publicJoin);
     $('qr').src = await QRCode.toDataURL(publicJoin, { width: 320, margin: 4, errorCorrectionLevel: 'M' });
   }
 
@@ -643,9 +729,13 @@ async function showScreen(config, view, slug) {
   let celebration;
   let highlight;
   let highlighted = [];
+  let sampleReset;
+  const sampleUpdate = $('sample-update');
+  const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+  const formatTotal = value => value >= 10000000 ? compact.format(value) : value.toLocaleString();
   const percent = counter($('percent'), value => (value / 10).toFixed(1));
-  const participants = counter($('participants'), value => value.toLocaleString());
-  const minutes = counter($('minutes'), value => value.toLocaleString());
+  const participants = counter($('participants'), formatTotal);
+  const minutes = counter($('minutes'), formatTotal);
 
   function paint(snapshot, previous) {
     for (const [id, elements] of paths) {
@@ -689,6 +779,7 @@ async function showScreen(config, view, slug) {
     minutes(snapshot.minutes, animate);
     if (animate && progress(state, !global) < 1000 && next >= 1000) celebrate(false);
     paint(snapshot, animate ? state : null);
+    if (global) $('coverage-label').textContent = 'Lap ' + snapshot.lap + ' coverage';
     state = snapshot;
   }
 
@@ -696,7 +787,8 @@ async function showScreen(config, view, slug) {
     try {
       features = await loadMap(demo);
       paths = drawMap($('world'), features);
-      if (state) paint(state, null);
+      if (demo) sample(state.covered);
+      else if (state) paint(state, null);
       $('map-status').hidden = true;
     } catch {
       $('map-status').textContent = 'Map temporarily unavailable';
@@ -705,16 +797,9 @@ async function showScreen(config, view, slug) {
     }
   }
 
-  function sample() {
-    if (features?.length) {
-      const count = Math.min(features.length - 1, (state?.covered ?? 45) + 4);
-      show({
-        grid: Object.fromEntries(features.filter((_, i) => i * 53 % features.length < count).map(feature => [feature.id, 1])),
-        total: features.length, covered: count, lap: 1,
-        participants: 180 + count * 2, minutes: 420 + count * 5,
-      }, Boolean(state));
-    }
-    setTimeout(sample, 6000);
+  function sample(covered, animate = false) {
+    const snapshot = sampleSnapshot(covered);
+    show({ ...snapshot, grid: features ? sampleGrid(features, snapshot.covered) : {} }, animate);
   }
 
   async function poll() {
@@ -723,25 +808,39 @@ async function showScreen(config, view, slug) {
       const sameOrHigher = !state || progress(next, !global) >= progress(state, !global);
       const sameLap = !state || state.lap === next.lap;
       show(next, live && sameOrHigher && (!global || sameLap));
-      status.textContent = global ? liveStatus(next, 'Live') : 'Live relay';
+      status.textContent = global ? liveStatus('Live') : 'Live relay';
       live = true;
     } catch {
       const message = state ? 'Updates delayed' : 'Waiting for relay data';
-      status.textContent = global ? liveStatus(state, message) : message;
+      status.textContent = global ? liveStatus(message) : message;
       live = false;
     }
     setTimeout(poll, live ? 10000 : 20000);
   }
 
   let controlTimer;
-  function controls() {
-    document.body.classList.add('show-controls');
-    clearTimeout(controlTimer);
-    controlTimer = setTimeout(() => document.body.classList.remove('show-controls'), 3000);
+  const operator = document.querySelector('.operator-controls');
+  const toggle = $('controls-toggle');
+  const toolbar = $('display-controls');
+  function expandControls(expanded) {
+    toolbar.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
   }
-  window.addEventListener('pointermove', controls, { passive: true });
-  window.addEventListener('pointerdown', controls, { passive: true });
-  window.addEventListener('keydown', controls);
+  function showControls() {
+    operator.classList.add('visible');
+    clearTimeout(controlTimer);
+    controlTimer = setTimeout(() => {
+      if (operator.matches(':hover, :focus-within')) return;
+      operator.classList.remove('visible');
+      expandControls(false);
+    }, 5000);
+  }
+  window.addEventListener('pointermove', showControls, { passive: true });
+  window.addEventListener('pointerdown', showControls, { passive: true });
+  window.addEventListener('keydown', showControls);
+  operator.addEventListener('pointerleave', showControls);
+  operator.addEventListener('focusout', showControls);
+  toggle.addEventListener('click', () => expandControls(toolbar.hidden));
   $('preview').addEventListener('click', () => celebrate(true));
   if (!document.fullscreenEnabled) $('fullscreen').hidden = true;
   $('fullscreen').addEventListener('click', async () => {
@@ -750,9 +849,25 @@ async function showScreen(config, view, slug) {
       else await document.documentElement.requestFullscreen();
     } catch { /* The operator can still use browser full screen. */ }
   });
+  document.addEventListener('fullscreenchange', () => {
+    $('fullscreen').textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+  });
+
+  if (demo) {
+    sample();
+    sampleUpdate.hidden = false;
+    sampleUpdate.addEventListener('click', () => {
+      clearTimeout(sampleReset);
+      if (state.covered > sampleSnapshot().covered) sample();
+      sample(sampleSnapshot().covered + 8, true);
+      sampleReset = setTimeout(() => sample(), 5000);
+    });
+    expandControls(true);
+  } else {
+    poll();
+  }
+  showControls();
   renderMap();
-  if (demo) sample();
-  else poll();
 }
 
 const view = query.get('view') || (vanityPath ? 'join' : '');

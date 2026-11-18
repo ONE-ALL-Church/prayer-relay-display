@@ -37,6 +37,7 @@ export function settings(source) {
     intro: shortText(source.intro, 160),
     invite: typeof source.invite === 'string' ? source.invite.trim() : '',
     accent: accentPattern.test(source.accent ?? '') ? source.accent : defaultAccent,
+    screenUrl: typeof source.screenUrl === 'string' ? source.screenUrl.trim() : '',
     qr: ['overview', 'vanity'].includes(source.qr) ? source.qr : 'direct',
   };
   if (source.demo === '1' || source.demo === 'live') value.demo = source.demo;
@@ -61,10 +62,10 @@ export function appUrl(base, options, view, slug) {
 }
 
 export function screenInvitation(base, config, slug) {
+  if (config.screenUrl) return inviteUrl(config.screenUrl);
   if (config.qr === 'vanity' && slug) return appUrl(base, config, undefined, slug).href;
   if (config.qr === 'overview' || config.qr === 'vanity') {
-    // Omit operator-only naming from the URL printed next to the QR code.
-    return appUrl(base, { ...config, name: '', qr: 'direct' }, 'join', slug).href;
+    return appUrl(base, { ...config, qr: 'direct' }, 'join', slug).href;
   }
   return prayerUrl(config);
 }
@@ -72,6 +73,7 @@ export function screenInvitation(base, config, slug) {
 export function usableRelay(config) {
   try {
     prayerUrl(config);
+    if (config.screenUrl) inviteUrl(config.screenUrl);
     return true;
   } catch {
     return false;
