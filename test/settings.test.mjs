@@ -15,7 +15,7 @@ test('overview links carry the selected relay and its public preferences', () =>
   const config = settings({ ...relay, qr: 'overview', intro: 'Take a minute to pray.' });
   const link = new URL(screenInvitation(base, config));
   assert.equal(link.searchParams.get('view'), 'join');
-  assert.equal(link.searchParams.has('name'), false);
+  assert.equal(link.searchParams.get('name'), config.name);
   const opened = settings(Object.fromEntries(link.searchParams));
   assert.equal(opened.intro, config.intro);
   assert.equal(opened.org, config.org);
@@ -43,4 +43,13 @@ test('short URL suggestions avoid reserved and occupied paths', () => {
   assert.equal(suggestSlug('祈り', 'abcd12', {}), 'relay-abcd12');
   const long = 'a'.repeat(48);
   assert.equal(suggestSlug(long, 'abcd12', { [long]: {} }), 'a'.repeat(46) + '-2');
+});
+
+test('a side-screen short URL overrides the QR destination without changing Start praying', () => {
+  const custom = 'https://church.example/pray';
+  const config = settings({ ...relay, qr: 'vanity', screenUrl: custom });
+  assert.equal(screenInvitation(base, config, 'outreach'), custom);
+  assert.equal(prayerUrl(config), 'https://prayer.global/prayer_app/custom/abcd12/map');
+  assert.equal(appUrl(base, config, 'side').searchParams.get('screenUrl'), custom);
+  assert.equal(usableRelay({ ...config, screenUrl: 'http://church.example/pray' }), false);
 });
